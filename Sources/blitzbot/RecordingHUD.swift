@@ -173,6 +173,28 @@ private struct HUDView: View {
                 active: isRecording && !processor.isPaused
             )
             .frame(height: 72)
+            .overlay(alignment: .bottomTrailing) {
+                // "Stimme erkannt" badge — fades in when voice is detected, out on silence
+                let voiceActive = isRecording && !processor.isPaused && recorder.level > 0.015
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 5, height: 5)
+                    Text("Stimme erkannt")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.1))
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
+                )
+                .opacity(voiceActive ? 1 : 0)
+                .animation(.easeInOut(duration: 0.3), value: voiceActive)
+                .padding(4)
+            }
 
             // ── Silence banner — reserved height, fades in/out (no layout jump) ──
             autoStopBannerReserved
@@ -435,30 +457,15 @@ private struct WaveformView: View {
     let level: Float
     let active: Bool
 
-    /// Smoothed voice-activity weight: 1.0 = voice, 0.0 = silence.
-    /// Animates between states for a soft color transition.
-    @State private var voiceWeight: Double = 0
-    @State private var idlePhase: Double = 0
     @State private var idleTimer: Timer?
-
-    private var hasVoice: Bool { active && level > 0.015 }
+    @State private var idlePhase: Double = 0
 
     var body: some View {
         Canvas { context, size in
             guard size.width > 0, size.height > 0 else { return }
-            let midY = size.height / 2
-            drawWaveform(context: context, size: size, midY: midY)
+            drawWaveform(context: context, size: size, midY: size.height / 2)
         }
-        .animation(.easeInOut(duration: 0.4), value: voiceWeight)
-        .onChange(of: hasVoice) { newValue in
-            withAnimation(.easeInOut(duration: 0.45)) {
-                voiceWeight = newValue ? 1.0 : 0.0
-            }
-        }
-        .onAppear {
-            voiceWeight = hasVoice ? 1.0 : 0.0
-            startIdleTimer()
-        }
+        .onAppear { startIdleTimer() }
         .onDisappear { idleTimer?.invalidate() }
     }
 
@@ -468,58 +475,51 @@ private struct WaveformView: View {
         let xStep = size.width / CGFloat(count - 1)
         let amplitude = midY * 0.88
 
-        // Color: interpolate yellow ↔ grey based on voiceWeight
-        let fillOpacity = voiceWeight * 0.12
+        // When recording, always yellow regardless of current speech activity.
+        // When not recording (idle / post-stop), use grey.
+        let isYellow = active
 
-        // Fill path
+        // Build paths (shared for fill and stroke)
         var fillPath = Path()
+        var strokePath = Path()
         for i in 0..<count {
             let x = CGFloat(i) * xStep
-            // When idle/silent, show a very gentle low-amplitude version of the waveform
-            let sampleVal = active ? samples[i] : samples[i] * 0.15
+            let sampleVal = active ? samples[i] : samples[i] * 0.12
             let y = midY - CGFloat(sampleVal) * amplitude
-            if i == 0 { fillPath.move(to: CGPoint(x: x, y: y)) }
-            else { fillPath.addLine(to: CGPoint(x: x, y: y)) }
+            if i == 0 {
+                fillPath.move(to: CGPoint(x: x, y: y))
+                strokePath.move(to: CGPoint(x: x, y: y))
+            } else {
+                fillPath.addLine(to: CGPoint(x: x, y: y))
+                strokePath.addLine(to: CGPoint(x: x, y: y))
+            }
         }
         fillPath.addLine(to: CGPoint(x: size.width, y: midY))
         fillPath.addLine(to: CGPoint(x: 0, y: midY))
         fillPath.closeSubpath()
-        if fillOpacity > 0.005 {
-            context.fill(fillPath, with: .color(Color.yellow.opacity(fillOpacity)))
-        }
 
-        // Stroke path
-        var strokePath = Path()
-        for i in 0..<count {
-            let x = CGFloat(i) * xStep
-            let sampleVal = active ? samples[i] : samples[i] * 0.15
-            let y = midY - CGFloat(sampleVal) * amplitude
-            if i == 0 { strokePath.move(to: CGPoint(x: x, y: y)) }
-            else { strokePath.addLine(to: CGPoint(x: x, y: y)) }
-        }
-
-        if voiceWeight > 0.01 {
-            // Yellow gradient with fade at edges when voice is active
+        if isYellow {
+            // Yellow fill + gradient stroke
+            context.fill(fillPath, with: .color(Color.yellow.opacity(0.12)))
             let gradient = Gradient(stops: [
-                .init(color: .orange.opacity(0.6 * voiceWeight), location: 0),
-                .init(color: .yellow.opacity(0.95 * voiceWeight), location: 0.35),
-                .init(color: .yellow.opacity(0.95 * voiceWeight), location: 0.65),
-                .init(color: .orange.opacity(0.6 * voiceWeight), location: 1)
+                .init(color: .orange.opacity(0.65), location: 0),
+                .init(color: .yellow.opacity(0.95), location: 0.35),
+                .init(color: .yellow.opacity(0.95), location: 0.65),
+                .init(color: .orange.opacity(0.65), location: 1)
             ])
             context.stroke(
                 strokePath,
                 with: .linearGradient(gradient,
-                                      startPoint: .init(x: 0, y: midY),
-                                      endPoint: .init(x: size.width, y: midY)),
+                                      startPoint: CGPoint(x: 0, y: midY),
+                                      endPoint: CGPoint(x: size.width, y: midY)),
                 lineWidth: 1.8
             )
-        }
-        // Grey overlay — fades in as voice fades out
-        if voiceWeight < 0.99 {
+        } else {
+            // Grey stroke when not recording
             context.stroke(
                 strokePath,
-                with: .color(Color.white.opacity(0.25 * (1 - voiceWeight))),
-                lineWidth: 1.5
+                with: .color(Color.white.opacity(0.22)),
+                lineWidth: 1.4
             )
         }
     }

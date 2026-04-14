@@ -184,7 +184,7 @@ During recording, a floating panel shows up in the middle of your screen:
 - **Top-left**: X cancel button (aborts recording without pasting) + mode icon + name
 - **Top-right**: elapsed time (`mm:ss`, monospaced)
 - **Controls row**: Pause / Resume button (left) + Auto-Stop countdown clock with draining ring (right, only visible when auto-stop is running)
-- **Middle**: full-width real audio waveform — draws actual PCM samples from the mic, scrolling in real-time
+- **Middle**: full-width real audio waveform — draws actual PCM samples from the mic, scrolling in real-time. Always yellow during recording; grey when idle. A small **"Stimme erkannt"** badge fades in when voice is detected.
 - **Silence banner**: fades in after 5 seconds of continuous silence with countdown to auto-stop (disappears smoothly when you resume speaking, no layout jumps)
 - **Status line**: *Recording… → Pausiert → Transkribiere… → Formuliere… → Fertig*
 - **Bottom row**: six mode pills (click to switch mode live), Auto-Execute toggle (↵), red **Stop** button
@@ -578,6 +578,8 @@ Got other ideas? Open an issue.
 ### v1.0.6 (2026-04-14)
 
 - **Real audio waveform**: HUD waveform now draws actual PCM sample data from the microphone (Canvas-based, scrolling oscilloscope). Was a simulated bar-chart animation before.
+- **Waveform always yellow during recording**: the waveform line stays consistently yellow for the entire recording session — no more grey flicker during pauses in speech.
+- **"Stimme erkannt" badge**: a small green-dot pill fades in over the waveform as soon as voice input is detected, fades out on silence. Gives immediate confirmation that the mic is picking up audio.
 - **Pause / Resume**: new Pause button in the HUD controls row. Audio engine pauses (keeping the WAV file open), resumes seamlessly. Auto-stop timer resets on resume.
 - **Auto-Stop countdown clock**: circular draining-ring indicator next to the Pause button shows seconds remaining until auto-stop fires. Appears only when the countdown is active.
 - **"Stille erkannt" delay**: the silence banner now waits 5 seconds of continuous silence before appearing (was immediate). Prevents flicker on natural pauses mid-sentence.
