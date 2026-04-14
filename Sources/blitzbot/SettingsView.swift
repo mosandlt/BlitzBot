@@ -5,20 +5,83 @@ struct SettingsView: View {
     @EnvironmentObject var config: AppConfig
     @State private var apiKeyInput = ""
     @State private var keyStatus = ""
+    @State private var selectedTab: SettingsTab = .general
 
     @Environment(\.openWindow) private var openWindow
 
-    var body: some View {
-        TabView {
-            general.tabItem { Label("Allgemein", systemImage: "gear") }
-            hotkeys.tabItem { Label("Hotkeys", systemImage: "keyboard") }
-            prompts.tabItem { Label("Prompts", systemImage: "text.alignleft") }
-            vocabulary.tabItem { Label("Vokabular", systemImage: "character.book.closed") }
-            setup.tabItem { Label("Setup", systemImage: "checkmark.shield") }
-            about.tabItem { Label("Über", systemImage: "info.circle") }
+    enum SettingsTab: String, CaseIterable, Identifiable {
+        case general, hotkeys, prompts, vocabulary, setup, about
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .general:    return "Allgemein"
+            case .hotkeys:    return "Hotkeys"
+            case .prompts:    return "Prompts"
+            case .vocabulary: return "Vokabular"
+            case .setup:      return "Setup"
+            case .about:      return "Über"
+            }
         }
-        .frame(width: 560, height: 440)
-        .padding()
+
+        var icon: String {
+            switch self {
+            case .general:    return "gearshape.fill"
+            case .hotkeys:    return "keyboard.fill"
+            case .prompts:    return "text.alignleft"
+            case .vocabulary: return "character.book.closed.fill"
+            case .setup:      return "checkmark.shield.fill"
+            case .about:      return "info.circle.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .general:    return .gray
+            case .hotkeys:    return .blue
+            case .prompts:    return .purple
+            case .vocabulary: return .green
+            case .setup:      return .orange
+            case .about:      return .teal
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            toolbar
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: 620, height: 480)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: 4) {
+            ForEach(SettingsTab.allCases) { tab in
+                TabButton(tab: tab, isSelected: selectedTab == tab) {
+                    selectedTab = tab
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch selectedTab {
+        case .general:    general
+        case .hotkeys:    hotkeys
+        case .prompts:    prompts
+        case .vocabulary: vocabulary
+        case .setup:      setup
+        case .about:      about
+        }
     }
 
     @State private var newWord = ""
@@ -277,5 +340,45 @@ struct SettingsView: View {
     private func deleteKey() {
         config.removeAPIKey()
         keyStatus = "Gelöscht."
+    }
+}
+
+private struct TabButton: View {
+    let tab: SettingsView.SettingsTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(tab.tint.gradient)
+                        .frame(width: 34, height: 34)
+                        .shadow(color: tab.tint.opacity(0.35),
+                                radius: isSelected ? 4 : 0,
+                                x: 0, y: 1)
+                    Image(systemName: tab.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                Text(tab.title)
+                    .font(.caption)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected
+                          ? Color.primary.opacity(0.08)
+                          : (hovering ? Color.primary.opacity(0.04) : .clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
