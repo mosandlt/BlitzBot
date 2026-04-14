@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct MenuBarView: View {
     @EnvironmentObject var processor: ModeProcessor
@@ -28,7 +29,10 @@ struct MenuBarView: View {
             Text("blitzbot").font(.headline)
             Spacer()
             statusIndicator
-            Button { openWindow(id: "settings") } label: {
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "settings")
+            } label: {
                 Image(systemName: "gearshape")
             }
             .buttonStyle(.plain)
@@ -56,18 +60,32 @@ struct MenuBarView: View {
     }
 
     private var footer: some View {
-        HStack {
+        VStack(spacing: 6) {
             if !config.hasAPIKey {
-                Label("Kein API-Key", systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
+                HStack {
+                    Label("Kein API-Key", systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                    Spacer()
+                }
             }
-            Spacer()
-            Button("Beenden") {
-                NSApp.terminate(nil)
+            HStack(spacing: 12) {
+                Button {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openWindow(id: "settings")
+                } label: {
+                    Label("Einstellungen…", systemImage: "gearshape")
+                        .font(.caption)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+                .buttonStyle(.plain)
+                Spacer()
+                Button("Beenden") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+                .buttonStyle(.plain)
+                .font(.caption)
             }
-            .keyboardShortcut("q", modifiers: .command)
-            .buttonStyle(.plain)
-            .font(.caption)
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)

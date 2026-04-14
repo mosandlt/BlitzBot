@@ -301,7 +301,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.0.5 (Stand: 2026-04-14)
+- **Aktuelle Version**: v1.0.6 (Stand: 2026-04-14)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
 - **Dev-Signing**: `blitzbot-dev` Cert (self-signed, in Login-Keychain, Codesigning-Trust gesetzt). Mit diesem Cert signierte Rebuilds überleben TCC + Keychain-ACL.
@@ -312,6 +312,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 | Version | Kernänderung |
 |---|---|
+| v1.0.6 | Echte Wellenform (Canvas/PCM), Pause/Resume, Auto-Stop-Uhr, Stille-Verzögerung 5s, 60s Default, Cancel-Button, Auto-Execute, Security-Fixes |
 | v1.0.5 | Ad-hoc Release-Pipeline, Gatekeeper-Workaround-Docs, bilingual Release Notes |
 | v1.0.4 | Fix: englischer Input → englischer Output (customPrompts sauber getrennt von Defaults) |
 | v1.0.3 | Mode 6 repurposed: "AI Command" → "Prompt" (Prompt-Optimizer); Content-Sprach-Erkennung als Whisper-Override |

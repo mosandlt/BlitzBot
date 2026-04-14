@@ -97,11 +97,29 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
             Deine Aufgabe: Wandle diese lose Beschreibung in einen sauberen, präzisen Prompt um. Der \
             User pastet dein Ergebnis anschließend 1:1 in das KI-Tool seiner Wahl.
 
+            WICHTIG — Neues Projekt vs. Update erkennen:
+            Höre genau zu, ob der User ein brandneues Projekt starten will oder eine Änderung/Ergänzung \
+            an etwas Bestehendem beschreibt. Im Zweifel: UPDATE annehmen, nicht neues Projekt. \
+            Der User arbeitet meistens an existierendem Code/Content weiter.
+            - Update-Signale: "ändere", "füge hinzu", "bau um", "erweitere", "fix", "in der Datei X", \
+              "im bestehenden Y", "wir haben bereits", "aktuell macht das Z", Bezug auf konkreten \
+              Bestand, Refactoring-Wortschatz.
+            - Neues-Projekt-Signale: "starte ein neues", "bau mir ein", "komplett von null", \
+              "erstelle ein neues Projekt/Repo/Skript".
+            - Bei Update: formuliere den Prompt als Änderung an bestehendem Code. Mach klar, dass die \
+              KI den vorhandenen Kontext respektieren soll (keine Umstrukturierung ohne Grund, keine \
+              neuen Dateien wenn nicht nötig, bestehende Konventionen beibehalten). Nenne — falls \
+              ableitbar — die betroffene(n) Datei(en) oder Komponente(n).
+            - Bei neuem Projekt: beschreibe Scope, Stack, Strukturvorschlag.
+            - Wenn komplett ambig und keine Signale zu finden: frame als Update und füge in die \
+              "Offene Fragen" eine Frage ein, ob es neu oder Update ist.
+
             Regeln:
-            - Ziel-Struktur (als Fließtext, keine Markdown-Headings): (1) Was gebaut/geändert/erstellt \
-              werden soll, (2) Kontext / Umgebung / relevante Rahmenbedingungen, (3) Konkrete \
-              Anforderungen und Constraints, (4) Akzeptanzkriterien oder erwartetes Ergebnis, \
-              (5) optional: nennenswerte Edge-Cases.
+            - Ziel-Struktur (als Fließtext, keine Markdown-Headings): (1) Was geändert/ergänzt/ \
+              gebaut werden soll — inkl. klarer Aussage ob Update an Bestehendem oder neues Projekt, \
+              (2) Kontext / Umgebung / relevante Rahmenbedingungen, (3) Konkrete Anforderungen und \
+              Constraints, (4) Akzeptanzkriterien oder erwartetes Ergebnis, (5) optional: \
+              nennenswerte Edge-Cases.
             - Sei spezifisch: bei Code-Aufgaben Sprache/Framework/Library/Dateipfade, bei Text-Aufgaben \
               Länge/Tonalität/Zielgruppe, bei Analyse-Aufgaben Output-Format. Extrahiere oder inferiere \
               aus der Beschreibung. Im Zweifel: am Ende einen kurzen Absatz "Offene Fragen" mit 1-3 \
@@ -167,10 +185,27 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
             Your job: turn this loose description into a clean, precise prompt. The user will paste \
             your result 1:1 into whichever AI tool they prefer.
 
+            IMPORTANT — detect new project vs. update:
+            Listen carefully whether the user wants to start a brand-new project or describes a \
+            change/addition to something that already exists. When in doubt: assume UPDATE, not new \
+            project. The user is usually iterating on existing code/content.
+            - Update signals: "change", "add", "refactor", "extend", "fix", "in file X", "in the \
+              existing Y", "we already have", "currently it does Z", references to concrete existing \
+              artifacts, refactoring vocabulary.
+            - New-project signals: "start a new", "build me a", "from scratch", "create a new \
+              project/repo/script".
+            - On update: frame the prompt as a change to existing code. Make it clear the AI should \
+              respect existing context (no unnecessary restructuring, no new files unless needed, \
+              keep existing conventions). Name — if inferable — the affected file(s) or component(s).
+            - On new project: describe scope, stack, proposed structure.
+            - If fully ambiguous with no signals: frame as update and add a question in "Open \
+              questions" asking whether it's new or an update.
+
             Rules:
-            - Target structure (as flowing text, no markdown headings): (1) what to build / change / \
-              produce, (2) context / environment / relevant constraints, (3) concrete requirements, \
-              (4) acceptance criteria or expected result, (5) optional: notable edge cases.
+            - Target structure (as flowing text, no markdown headings): (1) what to change / add / \
+              build — including a clear statement of update vs. new project, (2) context / \
+              environment / relevant constraints, (3) concrete requirements, (4) acceptance \
+              criteria or expected result, (5) optional: notable edge cases.
             - Be specific: for coding tasks include language/framework/library/file paths; for text \
               tasks include length/tone/audience; for analysis tasks include output format. Extract \
               or infer from the description. When genuinely ambiguous: end with a short "Open \

@@ -181,13 +181,20 @@ Normal mode runs entirely offline — no key, no cloud calls, nothing.
 
 During recording, a floating panel shows up in the middle of your screen:
 
-- **Top-left**: mode icon + name
+- **Top-left**: X cancel button (aborts recording without pasting) + mode icon + name
 - **Top-right**: elapsed time (`mm:ss`, monospaced)
-- **Middle**: 22-band waveform that reacts to your mic input
-- **Status line**: *Recording… → Transcribing… → Formulating… → Done*
-- **Bottom row**: five mode pills (click to switch mode live) + a red **Stop** button
+- **Controls row**: Pause / Resume button (left) + Auto-Stop countdown clock with draining ring (right, only visible when auto-stop is running)
+- **Middle**: full-width real audio waveform — draws actual PCM samples from the mic, scrolling in real-time
+- **Silence banner**: fades in after 5 seconds of continuous silence with countdown to auto-stop (disappears smoothly when you resume speaking, no layout jumps)
+- **Status line**: *Recording… → Pausiert → Transkribiere… → Formuliere… → Fertig*
+- **Bottom row**: six mode pills (click to switch mode live), Auto-Execute toggle (↵), red **Stop** button
 
-The HUD does **not** steal focus — it's an `NSPanel` with `nonactivatingPanel`, visible on all Spaces including fullscreen apps. Your target app keeps focus, so the Cmd+V actually pastes where you expect. The mode pills and Stop button work via mouse click because the panel accepts events without activating.
+The HUD does **not** steal focus — it's an `NSPanel` with `nonactivatingPanel`, visible on all Spaces including fullscreen apps. Your target app keeps focus, so the Cmd+V actually pastes where you expect. The mode pills, Pause button, and Stop button work via mouse click because the panel accepts events without activating.
+
+### Cancel vs. Stop
+
+- **Stop** (red button or hotkey re-press): ends recording and processes + pastes the text
+- **Cancel** (X button, top-left): ends recording and **discards** everything — nothing gets pasted. Good for accidental presses or drafts you change your mind about.
 
 ### The menu bar icon
 
@@ -211,9 +218,9 @@ Six tabs under **⚙ Settings**:
 
 | Tab        | What's inside |
 |------------|---------------|
-| **General**    | Anthropic API key, Claude model selection (Sonnet/Opus/Haiku), Whisper binary path, Whisper model path |
+| **General**    | Anthropic API key, Claude model selection (Sonnet/Opus/Haiku), output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path |
 | **Hotkeys**    | One recorder field per mode. Click, press keys. Defaults shown. Any conflicts are handled by the OS (you'll see it if a combo is reserved). |
-| **Prompts**    | Editable system prompt per mode. The default prompts are deliberately minimal — tweak to match your tone. |
+| **Prompts**    | Editable system prompt per mode. Leave empty = language-aware default. Add text to either *replace* the default or *append* to it (toggle per mode). |
 | **Vocabulary** | Proper nouns, product names, jargon, colleagues. Passed to Whisper as `--prompt`. Improves spelling accuracy dramatically. |
 | **Setup**      | Opens the onboarding wizard again. Use when permissions got reset (common after rebuilds). |
 | **About**      | Version, update check, GitHub link, license. Click *Check now* to see if a new release is available. |
@@ -250,9 +257,9 @@ text lands in whatever app has keyboard focus
 - **Audio never leaves your machine.** Not in any mode. Transcription is 100% local via whisper.cpp.
 - **`.wav` files are temporary.** Created in `/tmp/`, deleted immediately after Whisper finishes (inside a `defer` block in the transcriber).
 - **Normal mode makes zero network calls.** No telemetry, no analytics, no phone-home.
-- **Business / Plus / Rage / Emoji** send exactly one HTTPS request to `api.anthropic.com`, containing just the transcribed text + the mode's system prompt. That's the only thing that ever leaves your machine.
+- **Business / Plus / Rage / Emoji / Prompt** send exactly one HTTPS request to `api.anthropic.com`, containing just the transcribed text + the mode's system prompt. That's the only thing that ever leaves your machine.
 - **The API key lives in the macOS Keychain**, not in UserDefaults, not on disk in plain text.
-- **Transcripts aren't persisted.** The dev log at `~/.blitzbot/logs/blitzbot.log` contains transcripts only for debugging — if you plan to ship this publicly at scale, strip those `Log.write("TRANSCRIPT: …")` calls or reduce them to just `len=<n>`.
+- **Transcripts aren't persisted.** The dev log at `~/.blitzbot/logs/blitzbot.log` logs transcript *length* only — the content itself is not written to disk.
 
 ---
 
@@ -392,7 +399,7 @@ Sources/blitzbot/
   Mode.swift                enum (Normal, Business, Plus, Rage, Emoji) + display names + default prompts
   HotkeyManager.swift       KeyboardShortcuts integration per mode
   ModeProcessor.swift       state machine: toggle → record → transcribe → formulate → paste
-  AudioRecorder.swift       AVAudioEngine setup + RMS level publishing for the HUD waveform
+  AudioRecorder.swift       AVAudioEngine setup + rolling PCM sample buffer for real waveform + RMS level publishing
   WhisperTranscriber.swift  subprocess wrapper around whisper-cli
   AnthropicClient.swift     Claude API request/response
   Paster.swift              NSPasteboard + CGEvent Cmd+V simulation
@@ -567,6 +574,19 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.0.6 (2026-04-14)
+
+- **Real audio waveform**: HUD waveform now draws actual PCM sample data from the microphone (Canvas-based, scrolling oscilloscope). Was a simulated bar-chart animation before.
+- **Pause / Resume**: new Pause button in the HUD controls row. Audio engine pauses (keeping the WAV file open), resumes seamlessly. Auto-stop timer resets on resume.
+- **Auto-Stop countdown clock**: circular draining-ring indicator next to the Pause button shows seconds remaining until auto-stop fires. Appears only when the countdown is active.
+- **"Stille erkannt" delay**: the silence banner now waits 5 seconds of continuous silence before appearing (was immediate). Prevents flicker on natural pauses mid-sentence.
+- **Auto-stop default: 60 seconds** (was 45 s). Settings picker now starts at 10 s.
+- **Cancel button (X)**: HUD top-left now has an X button to abort a recording without pasting. Previous versions had no discard path.
+- **No layout jumps**: the silence banner area has a reserved fixed height; it fades in/out via opacity (`.easeInOut 0.35 s`) instead of adding/removing from layout.
+- **Auto-Execute toggle (↵)**: per-recording toggle in the HUD bottom row. When on, blitzbot simulates Return after the paste — useful for submitting messages in ChatGPT, Slack, etc. Resets to off on each new recording.
+- **Security hardening**: transcript content no longer written to log file (length only). API error messages sanitized — internal error types don't leak to logs or UI. Anthropic API request timeout set to 120 s.
+- **Custom prompt append mode**: Prompts tab now offers *"Replace default"* or *"Append to default"* per mode. Append is useful for "use Business style, but also be informal with colleagues".
 
 ### v1.0.5 (2026-04-14)
 

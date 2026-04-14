@@ -1,5 +1,11 @@
 import SwiftUI
+import AppKit
 import KeyboardShortcuts
+
+private enum PromptMergeMode: Hashable {
+    case replace
+    case append
+}
 
 struct SettingsView: View {
     @EnvironmentObject var config: AppConfig
@@ -233,6 +239,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack {
                 Button {
+                    NSApp.activate(ignoringOtherApps: true)
                     openWindow(id: "setup")
                 } label: {
                     Label("Setup öffnen", systemImage: "checkmark.shield")
@@ -271,8 +278,7 @@ struct SettingsView: View {
                 }
                 .onChange(of: config.model) { _ in config.save() }
             }
-            Section("Ausgabesprache / Output Language") {
-                Picker("Sprache", selection: $config.outputLanguage) {
+            Section("Ausgabesprache / Output Language") {                Picker("Sprache", selection: $config.outputLanguage) {
                     Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
                     Text("Deutsch").tag(OutputLanguage.de)
                     Text("English").tag(OutputLanguage.en)
@@ -282,6 +288,23 @@ struct SettingsView: View {
                 Text("Bei Auto entscheidet Whisper anhand der Aufnahme. Bei manueller Wahl wird die Transkription und Claude-Ausgabe erzwungen.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Auto-Stop bei Inaktivität") {
+                Toggle("Automatisch stoppen wenn keine Sprache erkannt wird", isOn: $config.autoStopEnabled)
+                    .onChange(of: config.autoStopEnabled) { _ in config.save() }
+                if config.autoStopEnabled {
+                    Picker("Timeout", selection: $config.autoStopTimeout) {
+                        Text("10 Sekunden").tag(TimeInterval(10))
+                        Text("20 Sekunden").tag(TimeInterval(20))
+                        Text("30 Sekunden").tag(TimeInterval(30))
+                        Text("45 Sekunden").tag(TimeInterval(45))
+                        Text("1 Minute").tag(TimeInterval(60))
+                        Text("2 Minuten").tag(TimeInterval(120))
+                    }
+                    .onChange(of: config.autoStopTimeout) { _ in config.save() }
+                    Text("Stille innerhalb eines Satzes setzt den Timer zurück, sobald du wieder sprichst.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Whisper") {
                 HStack {
@@ -326,41 +349,91 @@ struct SettingsView: View {
     private var prompts: some View {
         Form {
             Section {
-                Text("Leer lassen = Standard-Prompt in der gewählten Ausgabesprache. Eigener Text = erzwungener Override, unabhängig von der erkannten Sprache.")
+                Text("Leer lassen = Standard-Prompt in der gewählten Ausgabesprache. Mit eigenem Text: entweder **ersetzen** (Standard wird ignoriert) oder **anhängen** (Standard + dein Zusatz, z. B. für \"sei persönlicher\").")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(Mode.allCases) { mode in
-                Section(mode.displayName) {
-                    TextEditor(text: Binding(
-                        get: { config.customPrompts[mode] ?? "" },
-                        set: {
-                            let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if trimmed.isEmpty {
-                                config.customPrompts.removeValue(forKey: mode)
-                            } else {
-                                config.customPrompts[mode] = $0
-                            }
-                            config.save()
+                Section {
+                    promptSectionContent(for: mode)
+                } header: {
+                    HStack(spacing: 6) {
+                        Text(mode.displayName)
+                        Spacer()
+                        if let badge = promptBadge(for: mode) {
+                            Text(badge.text)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(badge.color.opacity(0.18), in: Capsule())
+                                .foregroundStyle(badge.color)
                         }
-                    ))
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 80)
-                    if config.customPrompts[mode] == nil {
-                        Text("Standard (\(config.outputLanguage == .en ? "EN" : "DE")): \(config.displayDefaultPrompt(for: mode).prefix(160))…")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                            .lineLimit(3)
-                    } else {
-                        Button("Auf Standard zurücksetzen") {
-                            config.customPrompts.removeValue(forKey: mode)
-                            config.save()
-                        }
-                        .font(.caption)
                     }
                 }
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func promptSectionContent(for mode: Mode) -> some View {
+        let hasCustom = (config.customPrompts[mode]?.isEmpty == false)
+
+        if hasCustom {
+            Picker("Modus", selection: Binding(
+                get: { config.customPromptAppendModes[mode] == true ? PromptMergeMode.append : .replace },
+                set: {
+                    config.customPromptAppendModes[mode] = ($0 == .append)
+                    config.save()
+                }
+            )) {
+                Text("Standard ersetzen").tag(PromptMergeMode.replace)
+                Text("An Standard anhängen").tag(PromptMergeMode.append)
+            }
+            .pickerStyle(.segmented)
+        }
+
+        TextEditor(text: Binding(
+            get: { config.customPrompts[mode] ?? "" },
+            set: {
+                let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    config.customPrompts.removeValue(forKey: mode)
+                    config.customPromptAppendModes.removeValue(forKey: mode)
+                } else {
+                    config.customPrompts[mode] = $0
+                }
+                config.save()
+            }
+        ))
+        .font(.system(.body, design: .monospaced))
+        .frame(minHeight: 80)
+
+        if !hasCustom {
+            Text("Standard (\(config.outputLanguage == .en ? "EN" : "DE")): \(config.displayDefaultPrompt(for: mode).prefix(160))…")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .lineLimit(3)
+        } else {
+            let isAppend = config.customPromptAppendModes[mode] == true
+            Text(isAppend
+                 ? "Der Standard-Prompt wird vorangestellt, dein Text kommt darunter (durch Leerzeile getrennt)."
+                 : "Dein Text ersetzt den Standard komplett — unabhängig von der erkannten Sprache.")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Auf Standard zurücksetzen") {
+                config.customPrompts.removeValue(forKey: mode)
+                config.customPromptAppendModes.removeValue(forKey: mode)
+                config.save()
+            }
+            .font(.caption)
+        }
+    }
+
+    private func promptBadge(for mode: Mode) -> (text: String, color: Color)? {
+        guard config.customPrompts[mode]?.isEmpty == false else { return nil }
+        if config.customPromptAppendModes[mode] == true {
+            return ("+ Zusatz", .blue)
+        }
+        return ("Override", .orange)
     }
 
     private func saveKey() {

@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 final class ModeProcessor: ObservableObject {
@@ -26,11 +27,30 @@ final class ModeProcessor: ObservableObject {
     @Published var activeMode: Mode?
     @Published var elapsed: TimeInterval = 0
     @Published var detectedLanguage: String?
+    /// Per-recording toggle: when on, a Return is simulated after the paste so chat-apps submit.
+    /// Non-persistent — resets to false at the start of each recording.
+    @Published var autoExecute: Bool = false
+    /// Seconds remaining until auto-stop fires (nil = not counting down / voice active).
+    @Published var autoStopSecondsLeft: Int? = nil
+    /// True when audio level has been below the silence threshold since last voice activity.
+    @Published var isInSilence: Bool = false
+    /// True after 5 seconds of continuous silence — drives the "Stille erkannt" banner.
+    @Published var showSilenceBanner: Bool = false
+    /// True when recording is paused (engine paused, file kept open).
+    @Published var isPaused: Bool = false
+    /// Auto-stop timeout configured for the current recording (for HUD progress display).
+    @Published var autoStopTimeoutForDisplay: TimeInterval = 45
 
     let recorder = AudioRecorder()
     private var isRecording = false
     private var startedAt: Date?
     private var tickTimer: Timer?
+    private var inactivityTimer: Timer?
+    private var inactivityTimerDeadline: Date?
+    private var silenceBannerTimer: Timer?
+    private var levelCancellable: AnyCancellable?
+    private static let silenceThreshold: Float = 0.03
+    private static let silenceBannerDelay: TimeInterval = 5
 
     func toggle(mode: Mode, config: AppConfig) {
         if isRecording {
@@ -42,35 +62,144 @@ final class ModeProcessor: ObservableObject {
                 Log.write("Mode switched while recording: \(previous?.rawValue ?? "nil") → \(mode.rawValue)")
             }
         } else {
-            startRecording(mode: mode)
+            startRecording(mode: mode, config: config)
         }
     }
 
-    private func startRecording(mode: Mode) {
+    func cancel() {
+        tearDownInactivityTimer()
+        tickTimer?.invalidate()
+        tickTimer = nil
+        startedAt = nil
+        if let url = recorder.stop() {
+            try? FileManager.default.removeItem(at: url)
+            Log.write("REC cancelled — wav deleted: \(url.lastPathComponent)")
+        }
+        isRecording = false
+        isPaused = false
+        autoExecute = false
+        activeMode = nil
+        status = .bereit
+    }
+
+    func pauseRecording(config: AppConfig) {
+        guard isRecording, !isPaused else { return }
+        tearDownInactivityTimer()
+        recorder.pause()
+        isPaused = true
+        Log.write("REC paused")
+    }
+
+    func resumeRecording(config: AppConfig) {
+        guard isRecording, isPaused else { return }
+        do {
+            try recorder.resume()
+            isPaused = false
+            startInactivityTimer(config: config)
+            Log.write("REC resumed")
+        } catch {
+            Log.write("REC resume FAILED: \(error)")
+            status = .fehler(error.localizedDescription)
+        }
+    }
+
+    private func startRecording(mode: Mode, config: AppConfig) {
         do {
             let url = try recorder.start()
             activeMode = mode
             detectedLanguage = nil
+            autoExecute = false
+            isPaused = false
             isRecording = true
+            autoStopTimeoutForDisplay = config.autoStopTimeout
             status = .aufnahme
             let now = Date()
             startedAt = now
             elapsed = 0
             tickTimer?.invalidate()
             tickTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.elapsed = Date().timeIntervalSince(now) }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.elapsed = Date().timeIntervalSince(now)
+                    if let deadline = self.inactivityTimerDeadline {
+                        let secs = Int(ceil(deadline.timeIntervalSinceNow))
+                        self.autoStopSecondsLeft = secs > 0 ? secs : nil
+                    }
+                }
             }
             Log.write("REC start mode=\(mode) file=\(url.lastPathComponent)")
+            startInactivityTimer(config: config)
         } catch {
             Log.write("REC start FAILED: \(error)")
             status = .fehler(error.localizedDescription)
         }
     }
 
+    private func startInactivityTimer(config: AppConfig) {
+        guard config.autoStopEnabled else { return }
+        inactivityTimer?.invalidate()
+        levelCancellable = recorder.$level
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                guard let self, self.isRecording else { return }
+                if level > Self.silenceThreshold {
+                    // Voice detected — reset everything
+                    self.isInSilence = false
+                    self.showSilenceBanner = false
+                    self.silenceBannerTimer?.invalidate()
+                    self.silenceBannerTimer = nil
+                    self.resetInactivityCountdown(config: config)
+                } else {
+                    // Silence — schedule banner after 5s delay if not already pending
+                    if !self.isInSilence {
+                        self.isInSilence = true
+                        self.silenceBannerTimer?.invalidate()
+                        self.silenceBannerTimer = Timer.scheduledTimer(
+                            withTimeInterval: Self.silenceBannerDelay,
+                            repeats: false
+                        ) { [weak self] _ in
+                            DispatchQueue.main.async { self?.showSilenceBanner = true }
+                        }
+                    }
+                }
+            }
+        resetInactivityCountdown(config: config)
+    }
+
+    private func resetInactivityCountdown(config: AppConfig) {
+        inactivityTimer?.invalidate()
+        let deadline = Date().addingTimeInterval(config.autoStopTimeout)
+        inactivityTimerDeadline = deadline
+        inactivityTimer = Timer.scheduledTimer(
+            withTimeInterval: config.autoStopTimeout,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isRecording else { return }
+                Log.write("Auto-Stop: \(Int(config.autoStopTimeout))s Inaktivität — verarbeite Aufnahme")
+                await self.stopAndProcess(config: config)
+            }
+        }
+    }
+
+    private func tearDownInactivityTimer() {
+        inactivityTimer?.invalidate()
+        inactivityTimer = nil
+        inactivityTimerDeadline = nil
+        silenceBannerTimer?.invalidate()
+        silenceBannerTimer = nil
+        levelCancellable = nil
+        isInSilence = false
+        showSilenceBanner = false
+        autoStopSecondsLeft = nil
+    }
+
     private func stopAndProcess(config: AppConfig) async {
+        tearDownInactivityTimer()
         tickTimer?.invalidate()
         tickTimer = nil
         startedAt = nil
+        isPaused = false
         guard let url = recorder.stop(), let mode = activeMode else {
             status = .fehler("Keine Aufnahme")
             return
@@ -92,7 +221,7 @@ final class ModeProcessor: ObservableObject {
                                                    whisperDetected: result.detectedLanguage,
                                                    transcript: raw)
             detectedLanguage = resolvedLanguage
-            Log.write("TRANSCRIPT lang=\(resolvedLanguage) (whisper=\(result.detectedLanguage)): \"\(raw)\"")
+            Log.write("TRANSCRIPT lang=\(resolvedLanguage) (whisper=\(result.detectedLanguage)): <\(raw.count) chars>")
             guard !raw.isEmpty else {
                 status = .fehler("Leere Transkription")
                 return
@@ -108,8 +237,16 @@ final class ModeProcessor: ObservableObject {
                 let client = AnthropicClient(apiKey: apiKey, model: config.model)
                 output = try await client.rewrite(text: raw, systemPrompt: prompt)
             }
-            Log.write("PASTE len=\(output.count)")
-            Paster.pasteText(output)
+            let outputTrimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !outputTrimmed.isEmpty else {
+                Log.write("PASTE skipped: empty output after processing")
+                status = .fehler("Leeres Ergebnis")
+                activeMode = nil
+                return
+            }
+            let runReturn = autoExecute
+            Log.write("PASTE len=\(output.count) autoReturn=\(runReturn)")
+            Paster.pasteText(output, autoReturn: runReturn)
             status = .fertig
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             if case .fertig = status {

@@ -57,18 +57,20 @@ final class RecordingHUDController {
     private func makePanel() -> NSPanel {
         let view = HUDView(
             onStop: { [weak self] in self?.stopRecording() },
-            onSwitch: { [weak self] mode in self?.switchMode(to: mode) }
+            onSwitch: { [weak self] mode in self?.switchMode(to: mode) },
+            onCancel: { [weak self] in self?.cancelRecording() },
+            onPause: { [weak self] in self?.pauseRecording() },
+            onResume: { [weak self] in self?.resumeRecording() }
         )
         .environmentObject(processor)
         .environmentObject(recorder)
 
         let host = NSHostingView(rootView: view)
-        let size = NSSize(width: 560, height: 220)
+        let size = NSSize(width: 560, height: 300)
         host.frame = NSRect(origin: .zero, size: size)
 
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            contentRect: NSRect(origin: .zero, size: size),            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -87,6 +89,20 @@ final class RecordingHUDController {
     private func stopRecording() {
         guard let mode = processor.activeMode, let config else { return }
         processor.toggle(mode: mode, config: config)
+    }
+
+    private func cancelRecording() {
+        processor.cancel()
+    }
+
+    private func pauseRecording() {
+        guard let config else { return }
+        processor.pauseRecording(config: config)
+    }
+
+    private func resumeRecording() {
+        guard let config else { return }
+        processor.resumeRecording(config: config)
     }
 
     private func switchMode(to mode: Mode) {
@@ -109,10 +125,25 @@ private struct HUDView: View {
     @EnvironmentObject var recorder: AudioRecorder
     let onStop: () -> Void
     let onSwitch: (Mode) -> Void
+    let onCancel: () -> Void
+    let onPause: () -> Void
+    let onResume: () -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
+            // ── Header row ──────────────────────────────────────────────
             HStack(spacing: 8) {
+                // X — Abbrechen (oben links)
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .help("Aufnahme abbrechen (kein Text wird eingefügt)")
+
                 Image(systemName: processor.activeMode?.symbolName ?? "bolt.fill")
                     .foregroundStyle(.yellow)
                 Text(processor.activeMode?.displayName ?? "blitzbot")
@@ -129,8 +160,23 @@ private struct HUDView: View {
                     .font(.system(.title3, design: .monospaced).bold())
                     .foregroundStyle(.white)
             }
-            WaveformView(level: recorder.level, active: isRecording)
-                .frame(height: 32)
+
+            // ── Controls row: Pause/Resume + Auto-Stop clock ─────────────
+            if isRecording {
+                controlsRow
+            }
+
+            // ── Real waveform ────────────────────────────────────────────
+            WaveformView(
+                samples: recorder.waveformSamples,
+                level: recorder.level,
+                active: isRecording && !processor.isPaused
+            )
+            .frame(height: 72)
+
+            // ── Silence banner — reserved height, fades in/out (no layout jump) ──
+            autoStopBannerReserved
+
             Text(statusText)
                 .font(.caption).foregroundStyle(.white.opacity(0.75))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,6 +194,84 @@ private struct HUDView: View {
         )
     }
 
+    /// Fixed-height slot — avoids layout jumps. Banner fades in/out via opacity.
+    private var autoStopBannerReserved: some View {
+        let secs = processor.autoStopSecondsLeft
+        let show = isRecording && processor.showSilenceBanner && secs != nil
+        return autoStopBanner(secondsLeft: secs ?? 0)
+            .opacity(show ? 1 : 0)
+            .animation(.easeInOut(duration: 0.35), value: show)
+    }
+
+    private var controlsRow: some View {
+        HStack(spacing: 8) {
+            // Pause / Resume pill
+            Button(action: { processor.isPaused ? onResume() : onPause() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: processor.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(processor.isPaused ? "Weiter" : "Pause")
+                        .font(.system(.caption2, design: .rounded).bold())
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(processor.isPaused
+                              ? Color.yellow.opacity(0.25)
+                              : Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.white.opacity(processor.isPaused ? 0.5 : 0.2), lineWidth: 1)
+                )
+                .foregroundStyle(.white.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            // Auto-Stop progress clock (only while not paused)
+            if !processor.isPaused, let secs = processor.autoStopSecondsLeft {
+                autoStopClock(secondsLeft: secs)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func autoStopClock(secondsLeft: Int) -> some View {
+        let total = processor.autoStopTimeoutForDisplay
+        let progress = total > 0 ? max(0, min(1, Double(secondsLeft) / total)) : 1.0
+        let urgent = secondsLeft <= 5
+        HStack(spacing: 6) {
+            // Circular countdown
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.12), lineWidth: 2.5)
+                    .frame(width: 20, height: 20)
+                Circle()
+                    .trim(from: 0, to: CGFloat(progress))
+                    .stroke(
+                        urgent ? Color.orange : Color.white.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 20, height: 20)
+                    .animation(.linear(duration: 0.1), value: progress)
+            }
+            Text("\(secondsLeft)s")
+                .font(.system(.caption2, design: .monospaced).bold())
+                .foregroundStyle(urgent ? .orange : .white.opacity(0.65))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(urgent ? Color.orange.opacity(0.15) : Color.white.opacity(0.06))
+        )
+    }
+
     private var modeSwitcher: some View {
         HStack(spacing: 6) {
             ForEach(Mode.allCases) { mode in
@@ -157,6 +281,9 @@ private struct HUDView: View {
                          action: { onSwitch(mode) })
             }
             Spacer(minLength: 4)
+            if isRecording {
+                autoExecuteToggle
+            }
             Button(action: onStop) {
                 HStack(spacing: 4) {
                     Image(systemName: "stop.fill")
@@ -174,6 +301,51 @@ private struct HUDView: View {
             .buttonStyle(.plain)
             .disabled(!canInteract)
         }
+    }
+
+    @ViewBuilder
+    private func autoStopBanner(secondsLeft: Int) -> some View {
+        let urgent = secondsLeft <= 5
+        HStack(spacing: 6) {
+            Image(systemName: urgent ? "timer.circle.fill" : "timer")
+                .font(.caption2.bold())
+            Text(urgent
+                 ? "Auto-Stop in \(secondsLeft)s"
+                 : "Stille erkannt — Auto-Stop in \(secondsLeft)s")
+                .font(.caption2.bold())
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(urgent ? Color.orange.opacity(0.25) : Color.white.opacity(0.08))
+        )
+        .foregroundStyle(urgent ? .orange : .white.opacity(0.65))
+        .animation(.easeInOut(duration: 0.2), value: secondsLeft)
+    }
+
+    private var autoExecuteToggle: some View {
+        Button {
+            processor.autoExecute.toggle()
+        } label: {
+            Image(systemName: processor.autoExecute ? "return.left" : "return")
+                .font(.system(size: 12, weight: .bold))
+                .frame(width: 30, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(processor.autoExecute
+                              ? Color.yellow.opacity(0.25)
+                              : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.white.opacity(processor.autoExecute ? 0.5 : 0), lineWidth: 1)
+                )
+                .foregroundStyle(processor.autoExecute ? .white : .white.opacity(0.6))
+        }
+        .buttonStyle(.plain)
+        .help("Nach dem Einfügen automatisch Return drücken (z. B. für ChatGPT). Gilt nur für diese Aufnahme.")
     }
 
     private var canInteract: Bool {
@@ -194,7 +366,10 @@ private struct HUDView: View {
 
     private var statusText: String {
         switch processor.status {
-        case .aufnahme:       return "Aufnahme läuft — Hotkey erneut drücken zum Beenden"
+        case .aufnahme:
+            return processor.isPaused
+                ? "Pausiert — Weiter zum Fortsetzen"
+                : "Aufnahme läuft — Hotkey erneut drücken zum Beenden"
         case .transkribiert:  return "Transkribiere…"
         case .formuliert:     return "Formuliere…"
         case .fertig:         return "Fertig — Text eingefügt"
@@ -256,49 +431,103 @@ private struct ModePill: View {
 }
 
 private struct WaveformView: View {
+    let samples: [Float]
     let level: Float
     let active: Bool
 
-    private let barCount = 22
-    @State private var phase: Double = 0
-    @State private var timer: Timer?
+    /// Smoothed voice-activity weight: 1.0 = voice, 0.0 = silence.
+    /// Animates between states for a soft color transition.
+    @State private var voiceWeight: Double = 0
+    @State private var idlePhase: Double = 0
+    @State private var idleTimer: Timer?
+
+    private var hasVoice: Bool { active && level > 0.015 }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { i in
-                Capsule()
-                    .fill(gradient(for: i))
-                    .frame(width: 6, height: barHeight(i))
+        Canvas { context, size in
+            guard size.width > 0, size.height > 0 else { return }
+            let midY = size.height / 2
+            drawWaveform(context: context, size: size, midY: midY)
+        }
+        .animation(.easeInOut(duration: 0.4), value: voiceWeight)
+        .onChange(of: hasVoice) { newValue in
+            withAnimation(.easeInOut(duration: 0.45)) {
+                voiceWeight = newValue ? 1.0 : 0.0
             }
         }
-        .frame(maxWidth: .infinity)
-        .onAppear { start() }
-        .onDisappear { timer?.invalidate() }
+        .onAppear {
+            voiceWeight = hasVoice ? 1.0 : 0.0
+            startIdleTimer()
+        }
+        .onDisappear { idleTimer?.invalidate() }
     }
 
-    private func start() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { _ in
-            phase += 0.25
+    private func drawWaveform(context: GraphicsContext, size: CGSize, midY: CGFloat) {
+        guard samples.count > 1 else { return }
+        let count = samples.count
+        let xStep = size.width / CGFloat(count - 1)
+        let amplitude = midY * 0.88
+
+        // Color: interpolate yellow ↔ grey based on voiceWeight
+        let fillOpacity = voiceWeight * 0.12
+
+        // Fill path
+        var fillPath = Path()
+        for i in 0..<count {
+            let x = CGFloat(i) * xStep
+            // When idle/silent, show a very gentle low-amplitude version of the waveform
+            let sampleVal = active ? samples[i] : samples[i] * 0.15
+            let y = midY - CGFloat(sampleVal) * amplitude
+            if i == 0 { fillPath.move(to: CGPoint(x: x, y: y)) }
+            else { fillPath.addLine(to: CGPoint(x: x, y: y)) }
+        }
+        fillPath.addLine(to: CGPoint(x: size.width, y: midY))
+        fillPath.addLine(to: CGPoint(x: 0, y: midY))
+        fillPath.closeSubpath()
+        if fillOpacity > 0.005 {
+            context.fill(fillPath, with: .color(Color.yellow.opacity(fillOpacity)))
+        }
+
+        // Stroke path
+        var strokePath = Path()
+        for i in 0..<count {
+            let x = CGFloat(i) * xStep
+            let sampleVal = active ? samples[i] : samples[i] * 0.15
+            let y = midY - CGFloat(sampleVal) * amplitude
+            if i == 0 { strokePath.move(to: CGPoint(x: x, y: y)) }
+            else { strokePath.addLine(to: CGPoint(x: x, y: y)) }
+        }
+
+        if voiceWeight > 0.01 {
+            // Yellow gradient with fade at edges when voice is active
+            let gradient = Gradient(stops: [
+                .init(color: .orange.opacity(0.6 * voiceWeight), location: 0),
+                .init(color: .yellow.opacity(0.95 * voiceWeight), location: 0.35),
+                .init(color: .yellow.opacity(0.95 * voiceWeight), location: 0.65),
+                .init(color: .orange.opacity(0.6 * voiceWeight), location: 1)
+            ])
+            context.stroke(
+                strokePath,
+                with: .linearGradient(gradient,
+                                      startPoint: .init(x: 0, y: midY),
+                                      endPoint: .init(x: size.width, y: midY)),
+                lineWidth: 1.8
+            )
+        }
+        // Grey overlay — fades in as voice fades out
+        if voiceWeight < 0.99 {
+            context.stroke(
+                strokePath,
+                with: .color(Color.white.opacity(0.25 * (1 - voiceWeight))),
+                lineWidth: 1.5
+            )
         }
     }
 
-    private func barHeight(_ i: Int) -> CGFloat {
-        let base: CGFloat = 4
-        guard active else { return base }
-        let center = Double(barCount - 1) / 2
-        let dist = abs(Double(i) - center) / center
-        let envelope = 1.0 - pow(dist, 1.4) * 0.6
-        let wobble = 0.5 + 0.5 * sin(phase + Double(i) * 0.6)
-        let lvl = Double(max(0.05, level))
-        let h = 4 + CGFloat(lvl * envelope * wobble) * 52
-        return min(h, 34)
-    }
-
-    private func gradient(for i: Int) -> LinearGradient {
-        LinearGradient(
-            colors: [.yellow.opacity(0.9), .orange],
-            startPoint: .top, endPoint: .bottom
-        )
+    private func startIdleTimer() {
+        idleTimer?.invalidate()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { _ in
+            idlePhase += 0.08
+        }
     }
 }

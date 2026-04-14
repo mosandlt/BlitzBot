@@ -36,9 +36,15 @@ final class AppConfig: ObservableObject {
     @Published var model: String
     /// Explicit user overrides only. A missing key means "use the language-appropriate default".
     @Published var customPrompts: [Mode: String]
+    /// When `true` for a mode, the custom prompt is appended to the language-appropriate
+    /// default (separated by a blank line). When `false` or missing, the custom prompt
+    /// replaces the default entirely (legacy behavior).
+    @Published var customPromptAppendModes: [Mode: Bool]
     @Published var hasAPIKey: Bool
     @Published var vocabulary: [String]
     @Published var outputLanguage: OutputLanguage
+    @Published var autoStopEnabled: Bool
+    @Published var autoStopTimeout: TimeInterval
 
     private let defaults = UserDefaults.standard
     private static let promptMigrationKey = "promptMigration.v1_0_4.customOnly"
@@ -67,13 +73,19 @@ final class AppConfig: ObservableObject {
         }
 
         var customPrompts: [Mode: String] = [:]
+        var customPromptAppendModes: [Mode: Bool] = [:]
         for mode in Mode.allCases {
             let key = "prompt.\(mode.rawValue)"
             if let stored = defaults.string(forKey: key), !stored.isEmpty {
                 customPrompts[mode] = stored
             }
+            let appendKey = "prompt.\(mode.rawValue).appendToDefault"
+            if defaults.object(forKey: appendKey) != nil {
+                customPromptAppendModes[mode] = defaults.bool(forKey: appendKey)
+            }
         }
         self.customPrompts = customPrompts
+        self.customPromptAppendModes = customPromptAppendModes
         self.hasAPIKey = KeychainStore.loadAPIKey()?.isEmpty == false
         self.vocabulary = defaults.stringArray(forKey: "vocabulary") ?? []
         if let raw = defaults.string(forKey: "outputLanguage"),
@@ -82,6 +94,11 @@ final class AppConfig: ObservableObject {
         } else {
             self.outputLanguage = .auto
         }
+        // Auto-stop defaults: enabled, 60 seconds
+        let storedAutoStop = defaults.object(forKey: "autoStopEnabled")
+        self.autoStopEnabled = storedAutoStop != nil ? defaults.bool(forKey: "autoStopEnabled") : true
+        let storedTimeout = defaults.double(forKey: "autoStopTimeout")
+        self.autoStopTimeout = storedTimeout > 0 ? storedTimeout : 60
     }
 
     var vocabularyPrompt: String {
@@ -93,14 +110,24 @@ final class AppConfig: ObservableObject {
     /// Legacy accessor. Returns German default unless the user set a custom override.
     /// Prefer `prompt(for:language:)`.
     func prompt(for mode: Mode) -> String {
-        customPrompts[mode] ?? mode.defaultSystemPrompt
+        prompt(for: mode, language: "de")
     }
 
     /// Returns the system prompt for a mode + resolved language ("de" or "en").
-    /// Priority: explicit user override > language-appropriate default.
+    /// Priority:
+    ///   1. No custom text → language-appropriate default
+    ///   2. Custom text + append mode on → default + blank line + custom
+    ///   3. Custom text + append mode off → custom replaces default
     func prompt(for mode: Mode, language: String) -> String {
-        if let custom = customPrompts[mode], !custom.isEmpty { return custom }
-        return mode.defaultSystemPrompt(for: language)
+        let fallback = mode.defaultSystemPrompt(for: language)
+        guard let custom = customPrompts[mode], !custom.isEmpty else { return fallback }
+        if customPromptAppendModes[mode] == true {
+            let base = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+            let addon = custom.trimmingCharacters(in: .whitespacesAndNewlines)
+            if base.isEmpty { return addon }
+            return base + "\n\n" + addon
+        }
+        return custom
     }
 
     /// Returns the resolved prompt for display in Settings when the user has no override.
@@ -120,12 +147,20 @@ final class AppConfig: ObservableObject {
         defaults.set(model, forKey: "claudeModel")
         defaults.set(vocabulary, forKey: "vocabulary")
         defaults.set(outputLanguage.rawValue, forKey: "outputLanguage")
+        defaults.set(autoStopEnabled, forKey: "autoStopEnabled")
+        defaults.set(autoStopTimeout, forKey: "autoStopTimeout")
         for mode in Mode.allCases {
             let key = "prompt.\(mode.rawValue)"
             if let value = customPrompts[mode], !value.isEmpty {
                 defaults.set(value, forKey: key)
             } else {
                 defaults.removeObject(forKey: key)
+            }
+            let appendKey = "prompt.\(mode.rawValue).appendToDefault"
+            if let flag = customPromptAppendModes[mode] {
+                defaults.set(flag, forKey: appendKey)
+            } else {
+                defaults.removeObject(forKey: appendKey)
             }
         }
     }
