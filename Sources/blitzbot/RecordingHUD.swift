@@ -63,7 +63,7 @@ final class RecordingHUDController {
         .environmentObject(recorder)
 
         let host = NSHostingView(rootView: view)
-        let size = NSSize(width: 480, height: 210)
+        let size = NSSize(width: 560, height: 220)
         host.frame = NSRect(origin: .zero, size: size)
 
         let panel = NSPanel(
@@ -117,6 +117,13 @@ private struct HUDView: View {
                     .foregroundStyle(.yellow)
                 Text(processor.activeMode?.displayName ?? "blitzbot")
                     .font(.headline).foregroundStyle(.white)
+                if let lang = processor.detectedLanguage {
+                    Text(lang.uppercased())
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.15)))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
                 Spacer()
                 Text(timerString)
                     .font(.system(.title3, design: .monospaced).bold())

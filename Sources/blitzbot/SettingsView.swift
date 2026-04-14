@@ -271,6 +271,18 @@ struct SettingsView: View {
                 }
                 .onChange(of: config.model) { _ in config.save() }
             }
+            Section("Ausgabesprache / Output Language") {
+                Picker("Sprache", selection: $config.outputLanguage) {
+                    Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
+                    Text("Deutsch").tag(OutputLanguage.de)
+                    Text("English").tag(OutputLanguage.en)
+                }
+                .pickerStyle(.radioGroup)
+                .onChange(of: config.outputLanguage) { _ in config.save() }
+                Text("Bei Auto entscheidet Whisper anhand der Aufnahme. Bei manueller Wahl wird die Transkription und Claude-Ausgabe erzwungen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section("Whisper") {
                 HStack {
                     Text("Binary").frame(width: 60, alignment: .leading)

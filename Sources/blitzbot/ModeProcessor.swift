@@ -25,6 +25,7 @@ final class ModeProcessor: ObservableObject {
     @Published var status: Status = .bereit
     @Published var activeMode: Mode?
     @Published var elapsed: TimeInterval = 0
+    @Published var detectedLanguage: String?
 
     let recorder = AudioRecorder()
     private var isRecording = false
@@ -49,6 +50,7 @@ final class ModeProcessor: ObservableObject {
         do {
             let url = try recorder.start()
             activeMode = mode
+            detectedLanguage = nil
             isRecording = true
             status = .aufnahme
             let now = Date()
@@ -81,16 +83,20 @@ final class ModeProcessor: ObservableObject {
 
         let transcriber = WhisperTranscriber(binaryPath: config.whisperBinary,
                                              modelPath: config.whisperModel,
+                                             language: config.outputLanguage.whisperLanguageFlag,
                                              vocabularyPrompt: config.vocabularyPrompt)
         do {
-            let raw = try transcriber.transcribe(audioURL: url)
-            Log.write("TRANSCRIPT: \"\(raw)\"")
+            let result = try transcriber.transcribe(audioURL: url)
+            let raw = result.text
+            let resolvedLanguage = resolveLanguage(config: config, detected: result.detectedLanguage)
+            detectedLanguage = resolvedLanguage
+            Log.write("TRANSCRIPT lang=\(resolvedLanguage) (whisper=\(result.detectedLanguage)): \"\(raw)\"")
             guard !raw.isEmpty else {
                 status = .fehler("Leere Transkription")
                 return
             }
             var output = raw
-            let prompt = config.prompt(for: mode)
+            let prompt = config.prompt(for: mode, language: resolvedLanguage)
             if !prompt.isEmpty {
                 status = .formuliert
                 guard let apiKey = KeychainStore.loadAPIKey(), !apiKey.isEmpty else {
@@ -112,6 +118,19 @@ final class ModeProcessor: ObservableObject {
             Log.write("ERROR: \(error)")
             status = .fehler(error.localizedDescription)
             activeMode = nil
+        }
+    }
+
+    private func resolveLanguage(config: AppConfig, detected: String) -> String {
+        switch config.outputLanguage {
+        case .auto:
+            let normalized = detected.lowercased()
+            if normalized.hasPrefix("en") { return "en" }
+            return "de"
+        case .de:
+            return "de"
+        case .en:
+            return "en"
         }
     }
 }

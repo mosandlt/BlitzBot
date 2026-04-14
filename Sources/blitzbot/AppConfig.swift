@@ -1,5 +1,35 @@
 import Foundation
 
+enum OutputLanguage: String, CaseIterable, Identifiable, Codable {
+    case auto, de, en
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto"
+        case .de:   return "Deutsch"
+        case .en:   return "English"
+        }
+    }
+
+    var whisperLanguageFlag: String {
+        switch self {
+        case .auto: return "auto"
+        case .de:   return "de"
+        case .en:   return "en"
+        }
+    }
+
+    var badge: String {
+        switch self {
+        case .auto: return "AUTO"
+        case .de:   return "DE"
+        case .en:   return "EN"
+        }
+    }
+}
+
 final class AppConfig: ObservableObject {
     @Published var whisperBinary: String
     @Published var whisperModel: String
@@ -7,6 +37,7 @@ final class AppConfig: ObservableObject {
     @Published var prompts: [Mode: String]
     @Published var hasAPIKey: Bool
     @Published var vocabulary: [String]
+    @Published var outputLanguage: OutputLanguage
 
     private let defaults = UserDefaults.standard
 
@@ -26,6 +57,12 @@ final class AppConfig: ObservableObject {
         self.prompts = prompts
         self.hasAPIKey = KeychainStore.loadAPIKey()?.isEmpty == false
         self.vocabulary = defaults.stringArray(forKey: "vocabulary") ?? []
+        if let raw = defaults.string(forKey: "outputLanguage"),
+           let lang = OutputLanguage(rawValue: raw) {
+            self.outputLanguage = lang
+        } else {
+            self.outputLanguage = .auto
+        }
     }
 
     var vocabularyPrompt: String {
@@ -38,11 +75,20 @@ final class AppConfig: ObservableObject {
         prompts[mode] ?? mode.defaultSystemPrompt
     }
 
+    /// Returns the system prompt for a mode + resolved language ("de" or "en").
+    /// If the user customized a prompt in Settings we use it as-is (no translation),
+    /// otherwise we pick the language-appropriate default.
+    func prompt(for mode: Mode, language: String) -> String {
+        if let custom = prompts[mode], !custom.isEmpty { return custom }
+        return mode.defaultSystemPrompt(for: language)
+    }
+
     func save() {
         defaults.set(whisperBinary, forKey: "whisperBinary")
         defaults.set(whisperModel, forKey: "whisperModel")
         defaults.set(model, forKey: "claudeModel")
         defaults.set(vocabulary, forKey: "vocabulary")
+        defaults.set(outputLanguage.rawValue, forKey: "outputLanguage")
         for (mode, prompt) in prompts {
             defaults.set(prompt, forKey: "prompt.\(mode.rawValue)")
         }

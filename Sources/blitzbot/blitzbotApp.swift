@@ -31,7 +31,7 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         hotkeys.register()
-        Log.write("Hotkeys registered (⌘⌥1–5)")
+        Log.write("Hotkeys registered (⌘⌥1–6)")
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }

@@ -42,13 +42,24 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 ## The five modes
 
-| # | Mode        | Default hotkey | Tagline                                 | Behavior |
-|---|-------------|----------------|------------------------------------------|----------|
-| 1 | **Normal**    | `⌘⌥1`          | Voice in. Text out.                      | Raw Whisper transcript. **No cloud call.** Zero cost. |
-| 2 | **Business**  | `⌘⌥2`          | Voice in. Business-ready out.            | Claude rewrites into clear, polite, structured business communication (emails, customer replies, LinkedIn posts). |
-| 3 | **Plus**      | `⌘⌥3`          | Speak in writing.                        | Claude removes filler words (*uhm, also, you know*) and fixes grammar — **your voice stays intact**. Not a business makeover. |
-| 4 | **Rage**      | `⌘⌥4`          | Frustration in. Calm out.                | Claude strips insults and aggressive tone — the substance of your criticism stays sharp. Good for writing angry emails you won't regret. |
-| 5 | **Emoji**     | `⌘⌥5`          | Voice in. Text with emojis out.          | Original wording 1:1, dotted with tasteful emojis (roughly 1 per 1-2 sentences). |
+| # | Mode          | Default hotkey | Tagline                                 | Behavior |
+|---|---------------|----------------|------------------------------------------|----------|
+| 1 | **Normal**      | `⌘⌥1`          | Voice in. Text out.                      | Raw Whisper transcript. **No cloud call.** Zero cost. |
+| 2 | **Business**    | `⌘⌥2`          | Voice in. Business-ready out.            | Claude rewrites into clear, polite, structured business communication (emails, customer replies, LinkedIn posts). |
+| 3 | **Plus**        | `⌘⌥3`          | Speak in writing.                        | Claude removes filler words (*uhm, also, you know*) and fixes grammar — **your voice stays intact**. Not a business makeover. |
+| 4 | **Rage**        | `⌘⌥4`          | Frustration in. Calm out.                | Claude strips insults and aggressive tone — the substance of your criticism stays sharp. Good for writing angry emails you won't regret. |
+| 5 | **Emoji**       | `⌘⌥5`          | Voice in. Text with emojis out.          | Original wording 1:1, dotted with tasteful emojis (roughly 1 per 1-2 sentences). |
+| 6 | **AI Command**  | `⌘⌥6`          | Prompt in. Result out.                   | Dictate an instruction — Claude *executes* it instead of polishing. Write code, analyze something, answer a question. The result pastes directly. |
+
+### Output language (auto-detected or manual)
+
+Settings → General → *Output language*:
+
+- **Auto** (default) — Whisper detects the language of what you spoke; the Claude polish runs in the same language
+- **German** — forces DE transcription + polish regardless of what you said
+- **English** — forces EN transcription + polish
+
+While recording, the HUD shows a small `DE`/`EN` badge next to the mode name so you see what the app will actually output.
 
 ### Switch mode mid-recording
 
@@ -504,6 +515,14 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.0.2 (2026-04-14)
+
+- **AI Command mode (6th mode, `⌘⌥6`)**: dictate an instruction and Claude executes it instead of polishing the wording. Write code, run an analysis, answer a factual question — the result gets pasted directly. Ideal for quick "write me a Python function that…" or "summarize this in three bullets" without opening a chat UI.
+- **Automatic language detection**: Whisper now auto-detects the spoken language (previously hardcoded to German). The Claude polish runs in the same language. German and English prompts ship as defaults for all modes.
+- **Manual language override**: Settings → General → *Output language* with *Auto / Deutsch / English* — forces transcription and Claude output to a specific language regardless of what was spoken.
+- **HUD language badge**: while recording, a small `DE` or `EN` pill shows next to the mode name so you see what will actually be written.
+- HUD width grew from 480 → 560 px to fit the 6th mode pill cleanly.
 
 ### v1.0.1 (2026-04-14)
 
