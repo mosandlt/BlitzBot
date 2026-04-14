@@ -1,0 +1,227 @@
+# blitzbot
+
+Lokale Speech-to-Text-App für macOS — diktieren statt tippen, systemweit in jede App einfügen.
+
+**Inspiration**: Video *"Nie wieder Tippen! Meine eigene Speech-to-Text App (Claude Code)"* von Christoph Magnussen — https://www.youtube.com/watch?v=vVTl1dqPL0k
+
+**Ziel**: eigene Variante bauen, nicht den Code kopieren.
+
+---
+
+## Wie wir hier arbeiten (Claude, das hier zuerst lesen)
+
+### Zwei-Prompt-Regel — **niemals überspringen**
+
+Bevor du für ein neues Feature Code schreibst, läuft immer erst der **Kritik-Pass**. Das ist der wichtigste Punkt in dieser Datei.
+
+**Prompt 1 — Kritische Voranalyse** (erzeugt *keinen* Code, nur Risiko-Map):
+
+> Bevor du Code erzeugst, agiere als Product Engineer für macOS und prüfe dieses Vorhaben kritisch.
+>
+> **Vorhaben:** [Feature-Beschreibung]
+>
+> **Deine Aufgabe:**
+> - Zerlege das Vorhaben in technische Teilprobleme
+> - Nenne die 10 größten Risiken für einen alltagstauglichen MVP
+> - Erkläre insbesondere, welche macOS-Berechtigungen und Systemgrenzen relevant sind
+> - Unterscheide klar zwischen:
+>   1. sicher machbar im MVP
+>   2. wahrscheinlich machbar mit Edge Cases
+>   3. riskant oder app-übergreifend unzuverlässig
+> - Schlage danach eine konkrete MVP-Architektur vor
+> - Empfiehl, welche Teile du zuerst prototypen solltest
+>
+> **Wichtig:** Schreibe für ein nicht-technisches Gründerteam. Keine unnötige Fachsprache. Klare Entscheidungen statt allgemeiner MVP-Phrasen.
+
+**Prompt 2 — Implementierung** (erst nach Prompt-1-Ergebnis):
+
+1. Feature-Idee mit Erkenntnissen aus Prompt 1 präzisieren
+2. In Claude Code Auto Mode einsetzen
+3. Subagents parallel launchen (Architektur-Scan, Backend-Scan, Implementation)
+4. Nach Deploy: Codex als Code-Review-Zweitmeinung
+
+### Auto Mode
+
+- Bevorzugt gegenüber Plan Mode (der ist laut Video zu träge)
+- Aktivieren: `Shift+Tab` bis unten `auto mode on` erscheint, oder Start mit `claude --mode=auto`
+- **Empfohlenes Setup: Opus 4.6 (1M context) + high effort**
+
+### Allowlist
+
+`.claude/settings.json` pflegen. Auf die Allowlist dürfen: `swift build`, `xcodebuild`, `git status`, `git diff`, Lese-Commands. **Nicht** auf die Allowlist: `rm`, `git push --force`, `brew install -g`, `sudo`, destruktive Git-Operationen.
+
+### Codex-Zweitmeinung
+
+Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Codex sagt "pass auf, vielleicht drei Schritte zurück". Für Architektur-Entscheidungen und Review nutzen.
+
+---
+
+## Workflow-Regeln (gelernte Praxis)
+
+1. **Build-Zyklus**:
+   ```
+   swift build -c release
+   cp .build/release/blitzbot blitzbot.app/Contents/MacOS/blitzbot
+   codesign --force --deep --sign - blitzbot.app
+   open blitzbot.app
+   ```
+   Immer in dieser Reihenfolge. Binary ersetzen ohne re-codesign = gebrochene Signatur.
+
+2. **Logging**: Nie `print()` oder `FileHandle.standardError` — **immer `Log.write(...)`** aus `Log.swift`. Schreibt nach `~/.blitzbot/logs/blitzbot.log`, überlebt App-Neustart, ist per `tail` beobachtbar.
+
+3. **Lifecycle**: `applicationDidFinishLaunching` im `NSApplicationDelegate` (via `@NSApplicationDelegateAdaptor`) ist der einzige verlässliche Startpunkt. `.onAppear` auf `MenuBarExtra`-Label feuert **nicht** zuverlässig.
+
+4. **Permissions-Fallstrick** (wichtig!):
+   - Jedes `codesign --force --sign -` erzeugt neuen CDHash → macOS TCC invalidiert alle System-Permissions (Accessibility, PostEvent). Mikrofon (user TCC) überlebt.
+   - **Dauerhafte Lösung**: stabiles Self-Signed-Cert aus *Keychain Access → Zertifikatsassistent → Zertifikat erstellen* (Name `blitzbot-dev`, Typ Code Signing, Selbstsigniert, "Immer vertrauen"). Dann `codesign -s blitzbot-dev ...` und Permissions bleiben.
+   - Bis dahin: User muss nach jedem Rebuild Accessibility re-granten. Setup-Fenster + Settings-Tab "Setup" bietet Shortcut zu Systemeinstellungen.
+
+5. **SourceKit-Warnungen nach Edits sind oft stale.** Immer `swift build` laufen lassen und darauf vertrauen, nicht blind den SourceKit-Fehlern folgen.
+
+6. **SwiftUI-Fokus-Falle**: Alle floating Panels (HUD, Setup) müssen `NSPanel` mit `.nonactivatingPanel` + `ignoresMouseEvents` sein. Sonst klaut das Panel den Fokus und `Cmd+V` pastet ins falsche Ziel.
+
+7. **KeyboardShortcuts-Package**: gepinnt auf `<1.15.0`. Version 2.x nutzt `#Preview`-Macros die einen Xcode-only `PreviewsMacros`-Plugin brauchen → SPM-Build bricht.
+
+8. **Dependencies**: Keine weiteren externen Packages ohne Rückfrage. Jede Dep vergrößert die Bundle-Size und erhöht Supply-Chain-Risiko.
+
+9. **Vor jedem Push**: `bosch-secrets-scan` Skill laufen lassen. Nie `.env`, `*.log`, `config.json`, Keys ins Repo.
+
+10. **UI-Änderungen im echten Build testen** — nicht nur Code lesen. Nach jedem UI-Change: rebuild, deploy, Hotkey drücken, Screenshot/Verhalten prüfen.
+
+11. **Commit-Stil**: Kleine, testbare Commits mit klaren Messages. Kein "wip", kein "fix stuff".
+
+---
+
+## Produkt
+
+### Idee
+
+- **Menubar-App** (Icon oben rechts, kein Dock-Eintrag — `LSUIElement=YES`)
+- Läuft permanent im Hintergrund, systemweit verfügbar
+- Globaler Hotkey → Aufnahme → Transkription → Auto-Paste in die aktive App
+- Funktioniert in LinkedIn, Slack, Mail, WhatsApp Web — überall
+- Toggle (drücken/erneut drücken zum Stoppen); Modus kann während Aufnahme gewechselt werden
+
+### Modi (Default-Hotkeys — in Settings individuell belegbar)
+
+| Pos | Modus    | Hotkey | Tagline                              | Verhalten |
+|-----|----------|--------|--------------------------------------|-----------|
+| 1   | Normal   | `⌘⌥1`  | "Sprache rein. Text raus."          | Wort-für-Wort, unverändert, **kein** LLM-Call |
+| 2   | Business | `⌘⌥2`  | "Sprache rein. Businesstauglich raus." | LLM → klar, höflich, strukturiert für Business-Kommunikation |
+| 3   | Plus     | `⌘⌥3`  | "Geschrieben sprechen."             | LLM → Füllwörter/Grammatik glätten, Stimme bleibt |
+| 4   | Rage     | `⌘⌥4`  | "Frust rein. Entspannt raus."       | LLM → Beleidigungen raus, Kritik bleibt |
+| 5   | Emoji    | `⌘⌥5`  | "Sprache rein. Text mit Emojis raus." | Original + dezente Emojis |
+
+Jeder Modus hat anpassbaren System-Prompt in den Settings.
+
+### UI-Copy-Regeln
+
+- Taglines immer nach dem Muster **"X rein. Y raus."** — prägnant, keine Fachsprache
+- Menubar-Icon reflektiert Status: `bolt.fill` (bereit), `record.circle.fill` rot+REC (aufnehmend), `waveform` gelb (verarbeitend), `checkmark.circle.fill` grün (fertig), `exclamationmark.triangle.fill` orange (Fehler)
+- Menubar-Popover minimal: Header + Modi-Liste + Footer (Quit, API-Key-Warning)
+- Settings-Zahnrad im Popover-Header oben rechts
+- **Deutsche UI** ist Default, **Englisch** via Localizable.strings
+- Deutsche User-Logs (`"Aufnahme läuft"`), englische Identifier/Code (`startRecording`)
+- HUD (Floating-Panel während Aufnahme): zentral, Modus-Badge + Timer mm:ss + Waveform + Status
+
+### Settings-UI (Tabs)
+
+1. **Allgemein**: Anthropic-API-Key (Keychain), Claude-Modell-Auswahl, Whisper-Binary + Modell-Pfad
+2. **Hotkeys**: pro Modus `KeyboardShortcuts.Recorder`
+3. **Prompts**: System-Prompt pro Modus editierbar
+4. **Vokabular**: Eigennamen/Fachbegriffe-Liste (wird als `--prompt` an Whisper)
+5. **Setup**: Shortcut zu Permissions-Fenster
+6. **Über**: Version, Lizenz, Auto-Update-Check
+
+---
+
+## Technik
+
+### Stack
+
+- **Sprache**: Swift 5.9+, SwiftUI (macOS 13+)
+- **Build**: Swift Package Manager (`swift build`), nicht Xcode-Projekt
+- **STT**: whisper.cpp lokal via `whisper-cli` CLI (nicht Whisper API) — offline, privat
+- **LLM-Glättung** (Business/Plus/Rage/Emoji): Anthropic Claude API
+- **Hotkeys**: `KeyboardShortcuts` von Sindre Sorhus (SPM, `<1.15.0`)
+- **Auto-Paste**: `NSPasteboard` + `CGEvent` Cmd+V-Simulation (Accessibility-Permission)
+- **Audio**: `AVAudioEngine` mit Tap für RMS-Pegel (für HUD-Waveform)
+- **Floating-UI**: `NSPanel` (`nonactivatingPanel`, `fullScreenAuxiliary`, `canJoinAllSpaces`)
+
+### Architektur
+
+```
+Hotkey-Event (KeyboardShortcuts)
+   ↓
+ModeProcessor.toggle(mode)          ← Mode-Switch während Aufnahme via gleiche Logik
+   ↓
+AudioRecorder.start() [AVAudioEngine → /tmp/*.wav, Pegel-Publish an HUD]
+   ↓ [User redet, Hotkey nochmal]
+Stop-Tap → wav fertig geschrieben
+   ↓
+WhisperTranscriber.transcribe() [whisper-cli -l de --prompt "<vocab>" …]
+   ↓
+Mode-Router:
+   ├─ Normal  → Text direkt
+   ├─ Business → Claude (business prompt)
+   ├─ Plus    → Claude (glätten, Stimme behalten)
+   ├─ Rage    → Claude (entschärfen, Kritik bleibt)
+   └─ Emoji   → Claude (Emojis ergänzen)
+   ↓
+Paster.pasteText() → NSPasteboard + CGEvent Cmd+V (120ms Delay, cgAnnotatedSessionEventTap)
+   ↓
+Text erscheint in aktiver App
+```
+
+### Dateistruktur
+
+```
+Sources/blitzbot/
+  blitzbotApp.swift        ← @main + AppDelegate + MenuBarExtra + Windows
+  AppConfig.swift          ← UserDefaults, Keychain, Vokabular, Prompts
+  Mode.swift               ← enum mit displayName, tagline, symbol, defaultPrompt
+  HotkeyManager.swift      ← KeyboardShortcuts-Bindings pro Mode
+  ModeProcessor.swift      ← State-Machine, Timer, Dispatch an Whisper+Claude
+  AudioRecorder.swift      ← AVAudioEngine + RMS-Level-Publishing
+  WhisperTranscriber.swift ← subprocess wrapper um whisper-cli
+  AnthropicClient.swift    ← Claude API call
+  Paster.swift             ← Clipboard + Cmd+V-Simulation
+  KeychainStore.swift      ← API-Key in Keychain
+  Log.swift                ← ~/.blitzbot/logs/blitzbot.log
+  Permissions.swift        ← TCC-Status-Checker
+  MenuBarView.swift        ← Popover-Content
+  SettingsView.swift       ← TabView mit Allgemein/Hotkeys/Prompts/Vokabular/Setup/Über
+  PermissionsView.swift    ← Onboarding-Wizard
+  RecordingHUD.swift       ← NSPanel Floating-HUD
+  Updater.swift            ← GitHub Releases Auto-Update-Check
+  Localizable.xcstrings    ← DE + EN (wenn Localized.xcstrings, sonst .strings pro lproj)
+```
+
+---
+
+## Sicherheit & Privatsphäre
+
+- **Audio-Dateien**: `/tmp/blitzbot-<uuid>.wav` — nach Transkription **immer** löschen (`defer` in `WhisperTranscriber.transcribe`). Niemals in `~`, niemals als Backup.
+- **API-Keys**: Keychain (`KeychainStore.swift`). Nie `UserDefaults`. Nie ins Repo. Niemals loggen.
+- **Transkripte nicht loggen**: im Dev-Log sind Transkripte nur zum Debuggen drin — für Release `Log.write("TRANSCRIPT: …")`-Calls entfernen oder auf `len=<n>` reduzieren.
+- **Cloud-Calls** (Claude): User weiß durch README + Settings, dass Business/Plus/Rage/Emoji den Text an Anthropic schicken. Normal-Modus macht keine Cloud-Calls.
+- **Vor jedem Push**: `bosch-secrets-scan` laufen lassen.
+
+## Nicht tun
+
+- Kein Source-Code von fremden Tools kopieren — nur inspirieren
+- Keine LaunchAgents / Auto-Start ohne User-Zustimmung
+- Kein `sudo` ohne Rückfrage
+- Keine globalen Installs (`brew install -g`, `npm -g`) ohne Freigabe
+- Keine destruktiven Git-Operationen (force-push, reset --hard) automatisch
+- Kein Re-Sign der App ohne Grund — jedes Re-Sign kostet den User Accessibility-Permissions
+- Keine Dependencies adden ohne Rückfrage
+
+---
+
+## Offene Punkte
+
+- Stabiles Dev-Code-Signing-Cert (manueller Schritt vom User in Keychain Access)
+- Evtl. Hold-to-Talk als Alternative zu Toggle
+- Lokales Whisper-Modell: bereits gesetzt (large-v3-turbo) — evtl. kleineres als Option
+- Echtes Notarisieren für Release (braucht Apple-Dev-Account)

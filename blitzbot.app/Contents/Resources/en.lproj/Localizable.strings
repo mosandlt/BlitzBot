@@ -1,0 +1,66 @@
+/* Mode names */
+"mode.normal.name"     = "Normal";
+"mode.business.name"   = "Business";
+"mode.plus.name"       = "Plus";
+"mode.rage.name"       = "Rage";
+"mode.emoji.name"      = "Emoji";
+
+/* Taglines (pattern: "X in. Y out.") */
+"mode.normal.tagline"   = "Voice in. Text out.";
+"mode.business.tagline" = "Voice in. Business-ready out.";
+"mode.plus.tagline"     = "Speak in writing.";
+"mode.rage.tagline"     = "Frustration in. Calm out.";
+"mode.emoji.tagline"    = "Voice in. Text with emojis out.";
+
+/* Status */
+"status.ready"         = "Ready";
+"status.recording"     = "Recording…";
+"status.transcribing"  = "Transcribing…";
+"status.formulating"   = "Formulating…";
+"status.done"          = "Done";
+"status.error"         = "Error: %@";
+
+/* Menubar / popover */
+"menubar.start"        = "Start";
+"menubar.stop"         = "Stop";
+"menubar.quit"         = "Quit";
+"menubar.no_api_key"   = "No API key";
+"menubar.rec"          = "REC";
+
+/* Settings tabs */
+"settings.tab.general"    = "General";
+"settings.tab.hotkeys"    = "Hotkeys";
+"settings.tab.prompts"    = "Prompts";
+"settings.tab.vocabulary" = "Vocabulary";
+"settings.tab.setup"      = "Setup";
+"settings.tab.about"      = "About";
+
+/* Setup window */
+"setup.welcome.title"    = "Welcome to blitzbot";
+"setup.welcome.subtitle" = "Quick check — then we're ready to go.";
+"setup.next"             = "Continue";
+"setup.recheck"          = "Re-check";
+"setup.microphone"       = "Microphone";
+"setup.microphone.desc"  = "So blitzbot can record your voice.";
+"setup.accessibility"    = "Accessibility";
+"setup.accessibility.desc" = "So blitzbot can paste via Cmd+V into the active app.";
+"setup.whisper.binary"   = "Whisper binary";
+"setup.whisper.model"    = "Whisper model";
+"setup.allow"            = "Allow";
+"setup.open_settings"    = "Open in Settings";
+
+/* HUD */
+"hud.recording"          = "Recording — press hotkey again to stop";
+"hud.transcribing"       = "Transcribing…";
+"hud.formulating"        = "Formulating…";
+"hud.done"               = "Done — text pasted";
+
+/* About */
+"about.version"          = "Version";
+"about.check_updates"    = "Check now";
+"about.download"         = "Download";
+"about.install"          = "Install & restart";
+"about.up_to_date"       = "Up to date";
+"about.update_available" = "New version: %@";
+"about.ready_to_install" = "Ready to install";
+"about.repository"       = "GitHub repository";
