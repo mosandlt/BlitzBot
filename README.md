@@ -286,17 +286,21 @@ Every state transition is logged: hotkey registration, recording start/stop with
 
 ### Commands
 
-```bash
-# Build release binary
-swift build -c release
+Build artifacts live in `~/Downloads/blitzbot-build/`, **never** inside the project directory — the project may live in a synced folder (Nextcloud, iCloud, Dropbox) and the `.build/` folder gets hundreds of megabytes.
 
-# Regenerate the app icon (writes blitzbot.iconset/ and AppIcon.icns)
+```bash
+# Full build + bundle + sign → ~/Downloads/blitzbot-build/blitzbot.app
+./build-app.sh
+
+# Same, with stable self-signed cert so permissions survive rebuilds
+./build-app.sh --sign blitzbot-dev
+
+# Launch
+open ~/Downloads/blitzbot-build/blitzbot.app
+
+# Regenerate the app icon (writes blitzbot.iconset/ + updates the committed AppIcon.icns)
 swift tools/make-icon.swift
 iconutil -c icns blitzbot.iconset -o blitzbot.app/Contents/Resources/AppIcon.icns
-
-# Full build + bundle + sign + launch
-./build-app.sh                       # ad-hoc sign (dev cycle)
-./build-app.sh --sign blitzbot-dev   # stable self-signed cert (permissions survive)
 
 # Follow logs
 tail -f ~/.blitzbot/logs/blitzbot.log

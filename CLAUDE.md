@@ -58,14 +58,16 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
 
 ## Workflow-Regeln (gelernte Praxis)
 
-1. **Build-Zyklus**:
+1. **Build-Zyklus — Build-Artefakte gehören nach `~/Downloads/blitzbot-build/`, NIE ins Projekt**:
    ```
-   swift build -c release
-   cp .build/release/blitzbot blitzbot.app/Contents/MacOS/blitzbot
-   codesign --force --deep --sign - blitzbot.app
-   open blitzbot.app
+   ./build-app.sh                    # baut komplett nach ~/Downloads/blitzbot-build/blitzbot.app
+   open ~/Downloads/blitzbot-build/blitzbot.app
    ```
-   Immer in dieser Reihenfolge. Binary ersetzen ohne re-codesign = gebrochene Signatur.
+   **Grund**: Projekt liegt in Nextcloud. `.build/` wird mehrere 100 MB groß → würde die Synchronisation blockieren, Diffs ersticken, Batterie belasten.
+   - `swift build --scratch-path "$HOME/Downloads/blitzbot-build/swift"` ist der Kern
+   - Die .app wird aus dem committeten Template (`blitzbot.app/Contents/Info.plist` + `Resources/`) neu zusammengebaut, Binary aus dem Scratch-Path
+   - Niemals `swift build` ohne `--scratch-path` aus dem Projekt laufen lassen, sonst landet `.build/` wieder im Nextcloud-Ordner
+   - Binary ersetzen ohne re-codesign = gebrochene Signatur
 
 2. **Logging**: Nie `print()` oder `FileHandle.standardError` — **immer `Log.write(...)`** aus `Log.swift`. Schreibt nach `~/.blitzbot/logs/blitzbot.log`, überlebt App-Neustart, ist per `tail` beobachtbar.
 
