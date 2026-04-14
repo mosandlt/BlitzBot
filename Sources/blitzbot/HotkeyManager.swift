@@ -39,11 +39,24 @@ extension Mode {
 final class HotkeyManager {
     var onTrigger: ((Mode) -> Void)?
 
+    private static let migrationKey = "hotkeyMigration.v1_0_1.businessModeAdded"
+
     func register() {
+        migrateIfNeeded()
         for mode in Mode.allCases {
             KeyboardShortcuts.onKeyDown(for: mode.shortcutName) { [weak self] in
                 self?.onTrigger?(mode)
             }
         }
+    }
+
+    private func migrateIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.migrationKey) else { return }
+        for mode in Mode.allCases {
+            KeyboardShortcuts.reset(mode.shortcutName)
+        }
+        defaults.set(true, forKey: Self.migrationKey)
+        Log.write("Hotkeys migrated: reset all mode shortcuts to v1.0.1 defaults")
     }
 }
