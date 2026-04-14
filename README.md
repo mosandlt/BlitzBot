@@ -414,17 +414,77 @@ Areas where help is especially welcome:
 
 blitzbot itself will stay macOS-only — the tight OS integration is a feature, not a bug, and porting would mean a parallel codebase that drifts over time.
 
-If you want to build a **Windows or Linux sibling**, the welcome approach is:
+If you want to build a sibling (Windows, Linux, iOS, Android, web) the approach is:
 
-- New repo (or new top-level directory in this repo, e.g. `blitzbot-win/`, `blitzbot-linux/`)
-- Share the things that are genuinely portable: the Claude system prompts (`Mode.swift`), the Whisper CLI invocation, the API request shape
-- Suggested stacks:
-  - **Cross-platform single codebase**: [Tauri](https://tauri.app) (Rust + webview) → one binary per OS, small, native-feeling
-  - **Windows native**: C# / WinUI 3 with `RegisterHotKey` + `SendInput` + `SetClipboardData`
-  - **Linux native**: GTK4 / Qt with `xdotool` or Wayland-specific hotkey handling, which is unfortunately still fragmented
-- Open an issue first to align on scope so we don't end up with three half-finished ports
+- New repo (or new top-level directory in this repo, e.g. `blitzbot-win/`, `blitzbot-ios/`)
+- Share the things that are genuinely portable: the Claude system prompts (`Mode.swift`), the Whisper invocation, the API request shape
+- Open an issue first to align on scope so we don't end up with multiple half-finished ports
 
-I personally won't maintain the port — I can't test on OSes I don't use. But I'll happily link to and endorse a well-built sibling project from this README.
+I personally won't maintain ports — I can't test on OSes I don't use. But I'll happily link to and endorse a well-built sibling project from this README.
+
+#### Windows
+
+- Cross-platform single codebase: [Tauri](https://tauri.app) (Rust + webview) → one binary per OS, small, native-feeling
+- Native: C# / WinUI 3 with `RegisterHotKey` + `SendInput` + `SetClipboardData`
+
+#### Linux
+
+- Native: GTK4 / Qt with `xdotool` or Wayland-specific hotkey handling, which is unfortunately still fragmented (per-compositor APIs, no unified global-hotkey story yet)
+
+#### iOS — pre-analyzed, not built
+
+Someone asked. We looked into it. Here's the honest take so the next person doesn't have to start from zero.
+
+**The core blitzbot UX does not port to iOS.** Apple forbids any app from simulating keyboard input into another app. There are also no global hotkeys outside the Shortcuts app. That means "press a key, speak, text lands in whatever app has focus" — the whole point on macOS — is architecturally impossible on iOS. A Windows/Linux port is a rewrite of the OS layer; an iOS "port" is a different app category.
+
+**The realistic iOS product is a standalone dictation app** — not a system-wide paste engine. Call it *blitzbot Notes* or similar. User flow:
+
+1. Open app (or trigger via Shortcuts / Share Extension / Home-Screen widget)
+2. Tap mic, speak, tap again
+3. Pick a mode (Normal / Business / Plus / Rage / Emoji) — same prompts as macOS
+4. Result shows in an editable text view
+5. Copy to clipboard, share-sheet into the target app, or save as a local draft
+
+**Suggested MVP architecture**:
+
+```
+BlitzbotApp (SwiftUI, iOS 17+)
+├── RecordView         big mic button, mode picker, live waveform
+├── TranscriptView     editable text, re-process with different mode, copy/share/save
+├── DraftsView         local history of the last ~50 transcripts (Core Data)
+├── SettingsView       API key, mode prompts, vocabulary, Whisper model size
+└── ShortcutsIntents   App Intents for Shortcuts.app integration + Share Extension
+```
+
+**Top risks to validate before committing** (do these first, in this order):
+
+1. **Whisper on-device performance.** Use [WhisperKit](https://github.com/argmaxinc/WhisperKit) or [whisper.cpp iOS bindings](https://github.com/ggerganov/whisper.cpp/tree/master/examples/whisper.objc). Measure latency + heat + battery with three model sizes (`tiny` ~75 MB, `base` ~150 MB, `small` ~480 MB). Forget `large-v3-turbo` (1.5 GB) on anything below an iPhone 15 Pro. **If this isn't fast + cool + battery-friendly, stop.**
+2. **Background processing.** iOS kills background tasks after ~30 s. Long dictations plus Whisper runtime might get killed mid-transcription. Requires `UIBackgroundModes → audio` and careful state restoration.
+3. **Thermal throttling.** Consecutive long transcriptions warm up the device and the OS starts throttling CPU/GPU. Measure under "normal user" conditions (back-to-back dictations, not a single clean bench).
+4. **Clipboard tax.** Since iOS 14, `UIPasteboard.general` reads are surfaced to the user with a toast. Writes are fine, but a flow that reads clipboard contents would hurt trust.
+5. **Shortcuts-app integration UX.** Technically nice, but onboarding is painful — users have to create a Shortcut, grant permissions, assign an activation method. Most won't bother.
+6. **Custom Keyboard Extension.** Theoretical path to "type with your voice everywhere". Blocker: custom keyboards without *Full Access* cannot hit the network → no Claude call. With Full Access, users get a scary permissions dialog that tanks adoption.
+7. **App Store review.** LLM-based text apps are getting stricter content-safety review. The Rage mode ("de-escalate angry text") could flag on the wrong reviewer.
+8. **Model distribution size.** Bundled Whisper model bloats the `.ipa`. Downloading on first launch is cleaner but needs a resume-capable downloader + integrity check.
+9. **API key storage.** iOS Keychain works fine, but sync across macOS/iOS via iCloud Keychain is non-trivial to do cleanly.
+10. **Maintenance cost.** Two platforms = doubled prompt-sync effort, doubled UI to keep aligned. Without a clear user-value-add beyond the macOS app, this is scope creep.
+
+**What's safely in scope for an MVP**:
+
+- Dictation with Whisper on-device + mode picker
+- Copy-to-clipboard + Share-sheet
+- Vocabulary list synced from macOS via iCloud KV store
+- TestFlight beta distribution
+
+**What's out of scope for an MVP**:
+
+- Simulating "paste into active app" — not possible
+- Custom Keyboard — too much UX friction for v1
+- Always-on background dictation — OS will kill it
+
+**Suggested first step: one-day spike.** Before planning the whole app, build a throwaway iOS app that does *only* Whisper on-device with three model sizes and logs latency + temperature + battery delta. If the numbers are bad on realistic hardware, iOS is a bad investment and we should document that instead of shipping a slow app. If the numbers are good, greenlight the MVP planning with actual data.
+
+If you want to take this on: fork or open an issue, propose the spike, and we'll link your repo from here.
 
 ---
 
