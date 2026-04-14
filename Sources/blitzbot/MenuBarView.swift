@@ -62,8 +62,12 @@ struct MenuBarView: View {
                     .font(.caption).foregroundStyle(.orange)
             }
             Spacer()
-            Button("Beenden") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.plain).font(.caption)
+            Button("Beenden") {
+                NSApp.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: .command)
+            .buttonStyle(.plain)
+            .font(.caption)
         }
         .padding(.horizontal, 12)
         .padding(.top, 4)

@@ -36,7 +36,7 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             MainActor.assumeIsolated {
-                self.hud = RecordingHUDController(processor: self.processor)
+                self.hud = RecordingHUDController(processor: self.processor, config: self.config)
             }
         }
 

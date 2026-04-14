@@ -8,10 +8,12 @@ final class RecordingHUDController {
     private var cancellables: Set<AnyCancellable> = []
     private let processor: ModeProcessor
     private let recorder: AudioRecorder
+    private weak var config: AppConfig?
 
-    init(processor: ModeProcessor) {
+    init(processor: ModeProcessor, config: AppConfig) {
         self.processor = processor
         self.recorder = processor.recorder
+        self.config = config
         processor.$status
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.handle(status: $0) }
@@ -53,12 +55,15 @@ final class RecordingHUDController {
     }
 
     private func makePanel() -> NSPanel {
-        let view = HUDView()
-            .environmentObject(processor)
-            .environmentObject(recorder)
+        let view = HUDView(
+            onStop: { [weak self] in self?.stopRecording() },
+            onSwitch: { [weak self] mode in self?.switchMode(to: mode) }
+        )
+        .environmentObject(processor)
+        .environmentObject(recorder)
 
         let host = NSHostingView(rootView: view)
-        let size = NSSize(width: 320, height: 140)
+        let size = NSSize(width: 480, height: 210)
         host.frame = NSRect(origin: .zero, size: size)
 
         let panel = NSPanel(
@@ -73,10 +78,20 @@ final class RecordingHUDController {
         panel.isOpaque = false
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.ignoresMouseEvents = true
+        panel.ignoresMouseEvents = false
         panel.hidesOnDeactivate = false
         panel.contentView = host
         return panel
+    }
+
+    private func stopRecording() {
+        guard let mode = processor.activeMode, let config else { return }
+        processor.toggle(mode: mode, config: config)
+    }
+
+    private func switchMode(to mode: Mode) {
+        guard let config else { return }
+        processor.toggle(mode: mode, config: config)
     }
 
     private func centerOnActiveScreen(_ panel: NSPanel) {
@@ -92,6 +107,8 @@ final class RecordingHUDController {
 private struct HUDView: View {
     @EnvironmentObject var processor: ModeProcessor
     @EnvironmentObject var recorder: AudioRecorder
+    let onStop: () -> Void
+    let onSwitch: (Mode) -> Void
 
     var body: some View {
         VStack(spacing: 10) {
@@ -106,20 +123,57 @@ private struct HUDView: View {
                     .foregroundStyle(.white)
             }
             WaveformView(level: recorder.level, active: isRecording)
-                .frame(height: 36)
+                .frame(height: 32)
             Text(statusText)
                 .font(.caption).foregroundStyle(.white.opacity(0.75))
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            modeSwitcher
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.black.opacity(0.82))
+                .fill(Color.black.opacity(0.85))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(dotColor.opacity(0.6), lineWidth: 1.2)
                 )
         )
+    }
+
+    private var modeSwitcher: some View {
+        HStack(spacing: 6) {
+            ForEach(Mode.allCases) { mode in
+                ModePill(mode: mode,
+                         isActive: processor.activeMode == mode,
+                         disabled: !canInteract,
+                         action: { onSwitch(mode) })
+            }
+            Spacer(minLength: 4)
+            Button(action: onStop) {
+                HStack(spacing: 4) {
+                    Image(systemName: "stop.fill")
+                    Text("Stop")
+                }
+                .font(.system(.caption, design: .rounded).bold())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isRecording ? Color.red : Color.red.opacity(0.4))
+                )
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canInteract)
+        }
+    }
+
+    private var canInteract: Bool {
+        switch processor.status {
+        case .aufnahme: return true
+        default:        return false
+        }
     }
 
     private var isRecording: Bool {
@@ -150,6 +204,47 @@ private struct HUDView: View {
         case .fehler:                     return .orange
         case .bereit:                     return .gray
         }
+    }
+}
+
+private struct ModePill: View {
+    let mode: Mode
+    let isActive: Bool
+    let disabled: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: mode.symbolName)
+                    .font(.caption2)
+                Text(mode.displayName)
+                    .font(.system(.caption2, design: .rounded).bold())
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.white.opacity(isActive ? 0.5 : 0), lineWidth: 1)
+            )
+            .foregroundStyle(isActive ? .white : .white.opacity(0.78))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+    }
+
+    private var background: Color {
+        if isActive { return .yellow.opacity(0.25) }
+        if hovering { return .white.opacity(0.12) }
+        return .white.opacity(0.05)
     }
 }
 

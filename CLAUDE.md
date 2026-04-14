@@ -69,6 +69,16 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
    - Niemals `swift build` ohne `--scratch-path` aus dem Projekt laufen lassen, sonst landet `.build/` wieder im Nextcloud-Ordner
    - Binary ersetzen ohne re-codesign = gebrochene Signatur
 
+   **Nach jedem Build Dev-App in `/Applications` aktualisieren UND starten**, damit der User sofort die Änderung sieht — nicht nur den Downloads-Build:
+   ```
+   pkill -f "/Applications/blitzbot.app" 2>/dev/null
+   ditto ~/Downloads/blitzbot-build/blitzbot.app /Applications/blitzbot.app
+   codesign --force --deep --sign - /Applications/blitzbot.app
+   touch /Applications/blitzbot.app    # LaunchServices refresh
+   open /Applications/blitzbot.app
+   ```
+   Dann im Log prüfen (`~/.blitzbot/logs/blitzbot.log`), dass `applicationDidFinishLaunching` + `Hotkeys registered` erscheinen. Ohne diese Verifikation ist "fertig" nicht fertig.
+
 2. **Logging**: Nie `print()` oder `FileHandle.standardError` — **immer `Log.write(...)`** aus `Log.swift`. Schreibt nach `~/.blitzbot/logs/blitzbot.log`, überlebt App-Neustart, ist per `tail` beobachtbar.
 
 3. **Lifecycle**: `applicationDidFinishLaunching` im `NSApplicationDelegate` (via `@NSApplicationDelegateAdaptor`) ist der einzige verlässliche Startpunkt. `.onAppear` auf `MenuBarExtra`-Label feuert **nicht** zuverlässig.
