@@ -4,6 +4,12 @@
 
 No always-on cloud listener. No server round-trip for the raw transcription. Press a hotkey, speak, press the hotkey again — text appears.
 
+> **⚠️ Platform support: macOS only (Apple Silicon)**
+>
+> blitzbot is **not available** for Windows or Linux. The whole app is deeply integrated with macOS-specific APIs: SwiftUI + AppKit UI, Carbon global hotkeys, CGEvent Cmd+V simulation, TCC accessibility permissions, macOS Keychain. Porting isn't a recompile — it would be a rewrite of every OS-touching layer.
+>
+> The reusable pieces are cross-platform: [whisper.cpp](https://github.com/ggerganov/whisper.cpp) runs on Linux and Windows, and the Claude API is HTTP. If you want to build a Windows or Linux equivalent using those building blocks, go for it — the prompts in `Sources/blitzbot/Mode.swift` are portable. PRs adding a separate cross-platform implementation (Tauri, Electron, native Win/Linux) are welcome as a sibling directory, but will not be maintained by me personally. See the [Contributing](#contributing) section.
+
 > **Inspiration**: Christoph Magnussen's video *"Nie wieder Tippen! Meine eigene Speech-to-Text App (Claude Code)"* — https://www.youtube.com/watch?v=vVTl1dqPL0k
 >
 > This is my own take on the idea: different architecture, different modes, different name. The point — as Christoph put it — is the shift from *tool tourist* to *application master*.
@@ -59,7 +65,7 @@ Start a recording with `⌘⌥1` (Normal), change your mind halfway through, pre
 
 ### Requirements
 
-- macOS 13 (Ventura) or newer
+- **macOS 13 (Ventura) or newer** — Windows and Linux are **not supported** (see platform note above)
 - Apple Silicon (arm64) — Intel not tested
 - [Homebrew](https://brew.sh)
 - About 1.5 GB of free disk for the Whisper model
@@ -399,6 +405,22 @@ Areas where help is especially welcome:
 - Notarization pipeline for the release workflow
 - Additional languages in `Localizable.strings`
 - More modes (e.g. *Translate* — dictate in one language, get output in another)
+
+### Ports to other platforms
+
+blitzbot itself will stay macOS-only — the tight OS integration is a feature, not a bug, and porting would mean a parallel codebase that drifts over time.
+
+If you want to build a **Windows or Linux sibling**, the welcome approach is:
+
+- New repo (or new top-level directory in this repo, e.g. `blitzbot-win/`, `blitzbot-linux/`)
+- Share the things that are genuinely portable: the Claude system prompts (`Mode.swift`), the Whisper CLI invocation, the API request shape
+- Suggested stacks:
+  - **Cross-platform single codebase**: [Tauri](https://tauri.app) (Rust + webview) → one binary per OS, small, native-feeling
+  - **Windows native**: C# / WinUI 3 with `RegisterHotKey` + `SendInput` + `SetClipboardData`
+  - **Linux native**: GTK4 / Qt with `xdotool` or Wayland-specific hotkey handling, which is unfortunately still fragmented
+- Open an issue first to align on scope so we don't end up with three half-finished ports
+
+I personally won't maintain the port — I can't test on OSes I don't use. But I'll happily link to and endorse a well-built sibling project from this README.
 
 ---
 
