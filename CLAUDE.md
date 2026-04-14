@@ -96,7 +96,13 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
 
 8. **Dependencies**: Keine weiteren externen Packages ohne Rückfrage. Jede Dep vergrößert die Bundle-Size und erhöht Supply-Chain-Risiko.
 
-9. **Vor jedem Push**: `bosch-secrets-scan` Skill laufen lassen. Nie `.env`, `*.log`, `config.json`, Keys ins Repo.
+9. **Vor jedem Push: harte PII/Secrets-Sperre — NIEMALS übersprungen**:
+   - Bei JEDEM `git push` (ohne Ausnahme) vorher `bosch-secrets-scan` plus Pattern-Grep auf den Diff laufen lassen.
+   - Wenn irgendein Treffer: Push abbrechen, User informieren, Datei aus Commit entfernen bevor gepusht wird.
+   - Als kritisch gilt alles aus den Kategorien: API-Keys / Tokens / JWT-Prefixe, Private Keys, Personennamen, Firmen-Emails, lokale User-Pfade, interne IP-Bereiche, WiFi-SSIDs, MAC-Adressen, interne Hostnames, Device-IDs, Signal/Telefonnummern, sowie Inhalte aus den lokalen Notiz-Files.
+   - Die **exakte Pattern-Liste** steht ausschließlich in `.git/hooks/pre-push` (repo-lokal, nicht committed) — dort als Regex gepflegt, damit diese Datei selbst clean bleibt.
+   - Der Hook blockt den Push mechanisch. Nicht löschen, nicht mit `--no-verify` umgehen.
+   - **Verantwortung**: Wenn trotzdem etwas durchrutscht → `git filter-repo` oder BFG zum Scrubben der History + Force-Push nach User-Freigabe. Betroffene Keys rotieren. Nie einfach "im nächsten Commit löschen" — der alte Commit bleibt für immer in der History sichtbar.
 
 9a. **Vor jedem Push: README auf den aktuellen Stand bringen.** Ohne Ausnahme. Die README ist die Visitenkarte des Repos und MUSS vor jedem `git push` widerspiegeln was im Code steht:
    - Neue Features → in die passenden Sektionen (Modi-Tabelle, Usage, Settings) einarbeiten
