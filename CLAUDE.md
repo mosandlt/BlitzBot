@@ -130,6 +130,22 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
    - TOC (`## Table of contents`) synchron halten
    - Keine "TODO: update README" Commits. Lieber ein Feature verschieben als die Doku verkommen lassen.
 
+9b. **GitHub Release Notes: immer bilingual (Deutsch + English).** Keine Ausnahme. Muster:
+   ```
+   > 🇩🇪 Deutsch unten · 🇬🇧 English below
+
+   ---
+
+   ## 🇬🇧 English
+   <notes in English>
+
+   ---
+
+   ## 🇩🇪 Deutsch
+   <notes in German>
+   ```
+   Zuerst English, dann Deutsch (GitHub schneidet nach oben ab bei kurzer Fenstergröße — Englisch ist die breitere Leser-Basis). Inhalt muss identisch sein, nicht bloß übersetzte Überschriften. Wenn ein Begriff nur in einer Sprache Sinn ergibt (z.B. UI-Label in Deutsch), in Klammern ergänzen. Bei nachträglichen Edits an Release Notes via `gh release edit`: beide Sprach-Blöcke aktualisieren, nicht nur einen.
+
 10. **UI-Änderungen im echten Build testen** — nicht nur Code lesen. Nach jedem UI-Change: rebuild, deploy, Hotkey drücken, Screenshot/Verhalten prüfen.
 
 11. **Commit-Stil**: Kleine, testbare Commits mit klaren Messages. Kein "wip", kein "fix stuff".
