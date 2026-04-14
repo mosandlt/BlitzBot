@@ -4,7 +4,7 @@
 "mode.plus.name"       = "Plus";
 "mode.rage.name"       = "Rage";
 "mode.emoji.name"      = "Emoji";
-"mode.aiCommand.name"  = "AI Command";
+"mode.aiCommand.name"  = "Prompt";
 
 /* Taglines (pattern: "X in. Y out.") */
 "mode.normal.tagline"   = "Voice in. Text out.";
@@ -12,7 +12,7 @@
 "mode.plus.tagline"     = "Speak in writing.";
 "mode.rage.tagline"     = "Frustration in. Calm out.";
 "mode.emoji.tagline"    = "Voice in. Text with emojis out.";
-"mode.aiCommand.tagline" = "Prompt in. Result out.";
+"mode.aiCommand.tagline" = "Idea in. Prompt out.";
 
 /* Status */
 "status.ready"         = "Ready";

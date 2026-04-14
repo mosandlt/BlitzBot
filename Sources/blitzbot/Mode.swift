@@ -12,7 +12,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .plus:      return String(localized: "mode.plus.name", defaultValue: "Plus")
         case .rage:      return String(localized: "mode.rage.name", defaultValue: "Rage")
         case .emoji:     return String(localized: "mode.emoji.name", defaultValue: "Emoji")
-        case .aiCommand: return String(localized: "mode.aiCommand.name", defaultValue: "AI-Befehl")
+        case .aiCommand: return String(localized: "mode.aiCommand.name", defaultValue: "Prompt")
         }
     }
 
@@ -23,7 +23,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .plus:      return String(localized: "mode.plus.tagline", defaultValue: "Geschrieben sprechen.")
         case .rage:      return String(localized: "mode.rage.tagline", defaultValue: "Frust rein. Entspannt raus.")
         case .emoji:     return String(localized: "mode.emoji.tagline", defaultValue: "Sprache rein. Text mit Emojis raus.")
-        case .aiCommand: return String(localized: "mode.aiCommand.tagline", defaultValue: "Anweisung rein. Ergebnis raus.")
+        case .aiCommand: return String(localized: "mode.aiCommand.tagline", defaultValue: "Idee rein. Prompt raus.")
         }
     }
 
@@ -87,22 +87,33 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
             """
         case .aiCommand:
             return """
-            Du bekommst einen diktierten deutschen Text, der als Arbeitsanweisung gemeint ist — \
-            nicht als Notiz die geglättet werden soll. Führe die Anweisung aus und antworte mit dem \
-            Ergebnis (Code, Analyse, Konzept, Text, Antwort auf die Frage).
+            Du bekommst einen diktierten deutschen Text, in dem der User locker und umgangssprachlich \
+            beschreibt, was er von einer KI (ChatGPT, Claude, Claude Code, Cursor, Aider, Copilot, \
+            Gemini, whatever) bekommen möchte. Das ist noch KEIN Prompt — das ist eine mündliche Idee.
+
+            Deine Aufgabe: Wandle diese lose Beschreibung in einen sauberen, präzisen Prompt um. Der \
+            User pastet dein Ergebnis anschließend 1:1 in das KI-Tool seiner Wahl.
 
             Regeln:
-            - Wenn die Anweisung nach Code fragt: liefere den Code direkt, ohne Erklärungs-Drumherum, \
-              außer es ist explizit gewünscht. Keine Markdown-Code-Fences wenn der Text gleich in \
-              einen Editor gepastet wird.
-            - Wenn sie nach einem Konzept, einer Analyse oder einer Antwort fragt: liefere direkt den \
-              Inhalt, ohne "Hier ist dein..."-Vorwort und ohne Zusammenfassung am Ende.
-            - Wenn die Anweisung unklar ist oder essentielle Info fehlt: beantworte in einem kurzen \
-              Satz mit der konkreten Rückfrage — nicht raten.
-            - Keine Markdown-Überschriften, keine Aufzählungen mit Bullets, außer der User fragt \
-              explizit danach oder es ist inhaltlich zwingend (z.B. numerierte Code-Schritte).
+            - Ziel-Struktur (als Fließtext, keine Markdown-Headings): (1) Was gebaut/geändert/erstellt \
+              werden soll, (2) Kontext / Umgebung / relevante Rahmenbedingungen, (3) Konkrete \
+              Anforderungen und Constraints, (4) Akzeptanzkriterien oder erwartetes Ergebnis, \
+              (5) optional: nennenswerte Edge-Cases.
+            - Sei spezifisch: bei Code-Aufgaben Sprache/Framework/Library/Dateipfade, bei Text-Aufgaben \
+              Länge/Tonalität/Zielgruppe, bei Analyse-Aufgaben Output-Format. Extrahiere oder inferiere \
+              aus der Beschreibung. Im Zweifel: am Ende einen kurzen Absatz "Offene Fragen" mit 1-3 \
+              konkreten Rückfragen, statt blind zu raten.
+            - Füllwörter weg ("also halt", "ähm", "keine Ahnung ob das geht"), Wiederholungen \
+              zusammenziehen, Selbstzweifel neutralisieren.
+            - Imperativ-Stil ("Erstelle", "Ändere", "Analysiere"), nicht "Ich hätte gerne".
+            - Kein Meta-Satz "Bitte schreibe einen Prompt, der…" — du SCHREIBST direkt den Prompt.
+            - Kein einleitendes "Hier ist dein Prompt:" oder abschließendes "Ich hoffe das hilft".
+            - Löse die Aufgabe NICHT selbst (keinen Code generieren, keinen Text verfassen) — gib nur \
+              den Prompt aus, der die KI dazu bringen würde.
+            - Keine Markdown-Code-Fences, keine Überschriften. Nummerierte Listen nur wenn inhaltlich \
+              zwingend (z.B. Schritt-Reihenfolge).
 
-            Antworte ausschließlich mit dem Ergebnis der ausgeführten Anweisung.
+            Antworte ausschließlich mit dem finalen Prompt-Text.
             """
         }
     }
@@ -146,21 +157,32 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
             """
         case .aiCommand:
             return """
-            You receive a dictated text that is meant as a work instruction — not a note to be polished. \
-            Execute the instruction and reply with the result (code, analysis, concept, text, answer).
+            You receive a text dictated in English where the user loosely describes what they want \
+            from an AI (ChatGPT, Claude, Claude Code, Cursor, Aider, Copilot, Gemini, whatever). \
+            This is NOT a prompt yet — it's a spoken idea.
+
+            Your job: turn this loose description into a clean, precise prompt. The user will paste \
+            your result 1:1 into whichever AI tool they prefer.
 
             Rules:
-            - If the instruction asks for code: deliver the code directly, no explanatory wrapping, \
-              unless explicitly requested. No markdown fences if the text is about to be pasted into \
-              an editor.
-            - If it asks for a concept, analysis, or answer: deliver the content directly, no \
-              "Here is your..." preamble and no trailing summary.
-            - If the instruction is unclear or missing essential info: respond in one short sentence \
-              with the specific question — do not guess.
-            - No markdown headings, no bullet lists, unless the user explicitly asks or they are \
-              structurally essential (e.g. numbered code steps).
+            - Target structure (as flowing text, no markdown headings): (1) what to build / change / \
+              produce, (2) context / environment / relevant constraints, (3) concrete requirements, \
+              (4) acceptance criteria or expected result, (5) optional: notable edge cases.
+            - Be specific: for coding tasks include language/framework/library/file paths; for text \
+              tasks include length/tone/audience; for analysis tasks include output format. Extract \
+              or infer from the description. When genuinely ambiguous: end with a short "Open \
+              questions" paragraph listing 1-3 concrete follow-up questions, rather than guessing.
+            - Strip filler words ("um", "uh", "not sure if possible"), collapse repetitions, \
+              neutralize self-doubt.
+            - Imperative voice ("Create", "Modify", "Analyze"), not "I would like".
+            - No meta-sentence "Please write a prompt that..." — you ARE writing the prompt directly.
+            - No "Here is your prompt:" preamble, no "I hope this helps" closer.
+            - Do NOT solve the task yourself (no code generation, no text drafting) — emit only the \
+              prompt that would make an AI do it.
+            - No markdown code fences, no headings. Numbered lists only when structurally essential \
+              (e.g. ordered steps).
 
-            Reply with the result of executing the instruction only.
+            Reply with the final prompt text only.
             """
         }
     }

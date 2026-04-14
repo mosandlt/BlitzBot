@@ -88,7 +88,9 @@ final class ModeProcessor: ObservableObject {
         do {
             let result = try transcriber.transcribe(audioURL: url)
             let raw = result.text
-            let resolvedLanguage = resolveLanguage(config: config, detected: result.detectedLanguage)
+            let resolvedLanguage = resolveLanguage(config: config,
+                                                   whisperDetected: result.detectedLanguage,
+                                                   transcript: raw)
             detectedLanguage = resolvedLanguage
             Log.write("TRANSCRIPT lang=\(resolvedLanguage) (whisper=\(result.detectedLanguage)): \"\(raw)\"")
             guard !raw.isEmpty else {
@@ -121,16 +123,51 @@ final class ModeProcessor: ObservableObject {
         }
     }
 
-    private func resolveLanguage(config: AppConfig, detected: String) -> String {
+    private func resolveLanguage(config: AppConfig,
+                                 whisperDetected: String,
+                                 transcript: String) -> String {
         switch config.outputLanguage {
+        case .de: return "de"
+        case .en: return "en"
         case .auto:
-            let normalized = detected.lowercased()
-            if normalized.hasPrefix("en") { return "en" }
-            return "de"
-        case .de:
-            return "de"
-        case .en:
-            return "en"
+            // Trust content-based detection over whisper-cli's metadata on short utterances,
+            // where whisper's auto-detect routinely labels clear English as "de".
+            if let contentLang = Self.detectLanguageFromContent(transcript) {
+                return contentLang
+            }
+            return whisperDetected.lowercased().hasPrefix("en") ? "en" : "de"
         }
+    }
+
+    // Simple stop-word ratio detector. Works on ~5 words+, robust enough to override
+    // whisper-cli mis-detection on short clips.
+    private static let englishStopwords: Set<String> = [
+        "the","is","a","to","of","and","in","that","it","for","with","on","this","be","are",
+        "from","as","at","by","an","or","not","have","has","was","were","will","can","would",
+        "could","should","i","you","we","they","he","she","but","if","so","my","your","our",
+        "what","how","when","where","why","which","who","do","does","did","just","about"
+    ]
+    private static let germanStopwords: Set<String> = [
+        "der","die","das","und","ist","ich","ein","eine","nicht","mit","von","den","zu","auf",
+        "dass","für","sich","als","im","wir","habe","werden","haben","war","wird","kann","ja",
+        "also","mir","dich","mich","was","bei","noch","auch","dir","dem","du","sie","er","sein",
+        "hat","hatte","würde","könnte","wenn","weil","aber","oder","aus","am","beim","ins","vom",
+        "bitte","gerne","eventuell","einfach"
+    ]
+
+    private static func detectLanguageFromContent(_ text: String) -> String? {
+        let lowered = text.lowercased()
+        let tokens = lowered.split { $0.isWhitespace || $0.isPunctuation }.map(String.init)
+        guard tokens.count >= 3 else { return nil }
+        var en = 0
+        var de = 0
+        for token in tokens {
+            if englishStopwords.contains(token) { en += 1 }
+            if germanStopwords.contains(token) { de += 1 }
+        }
+        if en == 0 && de == 0 { return nil }
+        if en >= de + 1 { return "en" }
+        if de >= en + 1 { return "de" }
+        return nil
     }
 }

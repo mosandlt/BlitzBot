@@ -49,7 +49,7 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 | 3 | **Plus**        | `⌘⌥3`          | Speak in writing.                        | Claude removes filler words (*uhm, also, you know*) and fixes grammar — **your voice stays intact**. Not a business makeover. |
 | 4 | **Rage**        | `⌘⌥4`          | Frustration in. Calm out.                | Claude strips insults and aggressive tone — the substance of your criticism stays sharp. Good for writing angry emails you won't regret. |
 | 5 | **Emoji**       | `⌘⌥5`          | Voice in. Text with emojis out.          | Original wording 1:1, dotted with tasteful emojis (roughly 1 per 1-2 sentences). |
-| 6 | **AI Command**  | `⌘⌥6`          | Prompt in. Result out.                   | Dictate an instruction — Claude *executes* it instead of polishing. Write code, analyze something, answer a question. The result pastes directly. |
+| 6 | **Prompt**      | `⌘⌥6`          | Idea in. Prompt out.                     | Dictate a loose idea — Claude turns it into a clean, precise prompt you can paste into any AI tool (ChatGPT, Claude, Claude Code, Cursor, Aider, Copilot, Gemini, …). Output is the prompt itself, not the result. |
 
 ### Output language (auto-detected or manual)
 
@@ -515,6 +515,11 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.0.3 (2026-04-14)
+
+- **Mode 6 repurposed**: was *AI Command* (Claude executes the instruction). Now *Prompt* — Claude turns a loose spoken idea into a clean, tool-agnostic prompt you paste into your AI of choice. Output is the prompt, not the result. Helpful when you know what you want but haven't yet structured it.
+- **Language detection hardened**: `whisper-cli -l auto` mislabels short English utterances as German more often than expected. v1.0.3 adds a stop-word-ratio content detector on top: if the transcript clearly looks English or German, that overrides Whisper's metadata. Prompt routing now follows the content, not Whisper's self-assessment.
 
 ### v1.0.2 (2026-04-14)
 
