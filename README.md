@@ -25,6 +25,7 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 - [The five modes](#the-five-modes)
 - [Installation](#installation)
+- [First launch on macOS (Gatekeeper workaround)](#first-launch-on-macos-gatekeeper-workaround)
 - [Usage](#usage)
 - [Settings](#settings)
 - [Data flow & privacy](#data-flow--privacy)
@@ -89,7 +90,41 @@ Or click directly: the HUD has five **mode pills** at the bottom. Click any pill
 
 1. Grab the latest `.zip` from [Releases](https://github.com/mosandlt/BlitzBot/releases).
 2. Unzip. Drag `blitzbot.app` into `/Applications`.
-3. Run the Whisper setup from the repo (see below) — you still need the CLI and model.
+3. **First launch — read this** ⚠️ — see [First launch on macOS](#first-launch-on-macos-gatekeeper-workaround) below.
+4. Run the Whisper setup from the repo (see below) — you still need the CLI and model.
+
+### First launch on macOS (Gatekeeper workaround)
+
+blitzbot is **ad-hoc signed**, not notarized by Apple. That means when you double-click `blitzbot.app` the first time, macOS Gatekeeper will block it with one of these messages:
+
+- *"blitzbot.app" can't be opened because the developer cannot be verified.*
+- *"blitzbot.app" can't be opened because Apple cannot check it for malicious software.*
+- *"blitzbot.app" is damaged and can't be opened.* (macOS 15+ Sequoia, if downloaded via browser)
+
+**Why**: shipping a Gatekeeper-clean macOS app requires enrolling in the Apple Developer Program (99 €/year) and notarizing every release through Apple's service. This project is open source and hobbyist — that cost isn't justified yet. The source is on GitHub, you can read and build it yourself.
+
+**How to open it anyway** (one-time per install):
+
+1. Close the Gatekeeper dialog.
+2. **Finder → Applications → right-click `blitzbot.app` → Open** (or Control-click → Open).
+3. A similar dialog appears but now with an **Open** button. Click **Open**.
+4. macOS remembers your decision. From the second launch onward it opens normally.
+
+If the dialog says *"is damaged"* (macOS 15+), run this once in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/blitzbot.app
+```
+
+That strips the quarantine attribute Safari/Chrome attach to downloaded files. Then double-click normally.
+
+**Security note**: you're running un-notarized code. That's a real trade-off. Before opening, you can:
+
+- Build from source yourself (`./build-app.sh` — see [Development](#development))
+- Inspect the signed binary: `codesign -dv /Applications/blitzbot.app` (should say `Signature=adhoc`)
+- Diff the zip against what the repo would produce at the tagged commit
+
+The app's behavior is constrained — it records audio, calls whisper.cpp locally, and optionally calls the Anthropic API. No other network calls, no telemetry, no auto-update writes outside `/Applications/blitzbot.app` itself.
 
 ### Option B: Build from source
 
@@ -310,11 +345,16 @@ Every state transition is logged: hotkey registration, recording start/stop with
 Build artifacts live in `~/Downloads/blitzbot-build/`, **never** inside the project directory — the project may live in a synced folder (Nextcloud, iCloud, Dropbox) and the `.build/` folder gets hundreds of megabytes.
 
 ```bash
-# Full build + bundle + sign → ~/Downloads/blitzbot-build/blitzbot.app
+# Default: sign with local blitzbot-dev cert
+# (permissions + keychain stay intact across rebuilds on your own machine)
 ./build-app.sh
 
-# Same, with stable self-signed cert so permissions survive rebuilds
-./build-app.sh --sign blitzbot-dev
+# Explicit identity
+./build-app.sh --sign <identity>
+
+# Release build: ad-hoc sign + zip for GitHub release
+# (portable, but end users will hit Gatekeeper on first launch)
+./build-app.sh --release
 
 # Launch
 open ~/Downloads/blitzbot-build/blitzbot.app
@@ -329,6 +369,18 @@ tail -f ~/.blitzbot/logs/blitzbot.log
 # Run Whisper on a file directly (debugging)
 whisper-cli -m ~/.blitzbot/models/ggml-large-v3-turbo.bin -f test.wav -l de -nt -otxt -of test
 ```
+
+### Signing identity
+
+| Scenario | Command | Cert | Who can open the app |
+|---|---|---|---|
+| **Local dev** (your own Mac) | `./build-app.sh` | `blitzbot-dev` (self-signed, in your login keychain) | Only you — signature tied to the private key on your machine |
+| **GitHub Release** | `./build-app.sh --release` | Ad-hoc (no cert) | Anyone, but first launch triggers Gatekeeper (see [First launch](#first-launch-on-macos-gatekeeper-workaround)) |
+| **Custom identity** | `./build-app.sh --sign <name>` | whatever you pass | Depends on the cert |
+
+The local `blitzbot-dev` cert is regenerated via the CLI block in [`CLAUDE.md`](CLAUDE.md) if it ever gets lost. No Keychain Access GUI needed. The cert stays on your machine — never bundled into releases.
+
+Shipping a Gatekeeper-clean release requires the Apple Developer Program (99 €/year) and notarization. Not done here. See [First launch](#first-launch-on-macos-gatekeeper-workaround) for what end users see.
 
 ### Key files
 
@@ -515,6 +567,13 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.0.5 (2026-04-14)
+
+- **Release build pipeline clarified**: `./build-app.sh --release` now explicitly ad-hoc signs and packages a `.zip` for GitHub Releases. The local dev cert (`blitzbot-dev`) never ends up in a release artifact — it stays on the developer's machine for in-place rebuilds.
+- **README**: new [First launch on macOS](#first-launch-on-macos-gatekeeper-workaround) section with the Gatekeeper workaround (right-click → Open, or `xattr -dr com.apple.quarantine` for macOS 15+ "damaged" message), and an honest note about why the app isn't notarized.
+- **Signing identity table** added to the Development section so it's clear what each build mode ships.
+- No code changes — this is a distribution-hygiene release.
 
 ### v1.0.4 (2026-04-14)
 

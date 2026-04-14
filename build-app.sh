@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
-# Builds blitzbot and assembles the .app bundle in ~/Downloads/blitzbot-build/
-# — NEVER into the project directory (avoids Nextcloud syncing heavy build artifacts).
+# blitzbot build & bundle.
 #
-# Usage:
-#   ./build-app.sh                       # ad-hoc sign
-#   ./build-app.sh --sign <identity>     # e.g. blitzbot-dev (permissions survive rebuilds)
+# Modes:
+#   ./build-app.sh                       # default: sign with local blitzbot-dev cert
+#                                        # (TCC permissions + keychain ACL survive rebuilds)
+#   ./build-app.sh --sign <identity>     # custom signing identity from your keychain
+#   ./build-app.sh --release             # ad-hoc sign + zip for GitHub release
+#                                        # (portable: any macOS user can run it, but will hit
+#                                         Gatekeeper on first launch; see README "First launch")
+#
+# Output: ~/Downloads/blitzbot-build/blitzbot.app
+# Never builds into the project directory (Nextcloud sync would choke on .build/).
 
 set -euo pipefail
 
-IDENTITY="-"
-if [[ "${1:-}" == "--sign" && -n "${2:-}" ]]; then
+MODE="dev"
+IDENTITY="blitzbot-dev"
+
+if [[ "${1:-}" == "--release" ]]; then
+    MODE="release"
+    IDENTITY="-"
+elif [[ "${1:-}" == "--sign" && -n "${2:-}" ]]; then
     IDENTITY="$2"
 fi
 
@@ -18,6 +29,7 @@ BUILD_ROOT="$HOME/Downloads/blitzbot-build"
 SWIFT_BUILD="$BUILD_ROOT/swift"
 APP_DIR="$BUILD_ROOT/blitzbot.app"
 
+echo "→ mode: $MODE, signing identity: $IDENTITY"
 echo "→ build root: $BUILD_ROOT"
 mkdir -p "$BUILD_ROOT"
 
@@ -36,8 +48,19 @@ echo "→ codesign (identity: $IDENTITY)"
 codesign --force --deep --sign "$IDENTITY" "$APP_DIR"
 
 echo "→ verify"
-codesign -dv "$APP_DIR" 2>&1 | head -5
+codesign -dv "$APP_DIR" 2>&1 | head -6
 
-echo ""
-echo "✔ blitzbot.app built at: $APP_DIR"
-echo "  launch: open \"$APP_DIR\""
+if [[ "$MODE" == "release" ]]; then
+    VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_DIR/Contents/Info.plist")
+    ZIP_PATH="$BUILD_ROOT/blitzbot-${VERSION}-macos-arm64.zip"
+    rm -f "$ZIP_PATH"
+    ( cd "$BUILD_ROOT" && ditto -c -k --keepParent blitzbot.app "$ZIP_PATH" )
+    echo ""
+    echo "✔ Release artifact: $ZIP_PATH"
+    echo "   size: $(ls -lh "$ZIP_PATH" | awk '{print $5}')"
+    echo "   signing: ad-hoc (end users must right-click → Open on first launch)"
+else
+    echo ""
+    echo "✔ blitzbot.app built at: $APP_DIR"
+    echo "  launch: open \"$APP_DIR\""
+fi
