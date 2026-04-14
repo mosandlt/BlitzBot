@@ -72,12 +72,30 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
    **Nach jedem Build Dev-App in `/Applications` aktualisieren UND starten**, damit der User sofort die Änderung sieht — nicht nur den Downloads-Build:
    ```
    pkill -f "/Applications/blitzbot.app" 2>/dev/null
+   ./build-app.sh --sign blitzbot-dev
    ditto ~/Downloads/blitzbot-build/blitzbot.app /Applications/blitzbot.app
-   codesign --force --deep --sign - /Applications/blitzbot.app
+   codesign --force --deep --sign blitzbot-dev /Applications/blitzbot.app
    touch /Applications/blitzbot.app    # LaunchServices refresh
    open /Applications/blitzbot.app
    ```
-   Dann im Log prüfen (`~/.blitzbot/logs/blitzbot.log`), dass `applicationDidFinishLaunching` + `Hotkeys registered` erscheinen. Ohne diese Verifikation ist "fertig" nicht fertig.
+   Dann im Log prüfen (`~/.blitzbot/logs/blitzbot.log`), dass `applicationDidFinishLaunching` + `Hotkeys registered` erscheinen.
+
+   **WICHTIG: immer `--sign blitzbot-dev`, NIE wieder ad-hoc (`--sign -`).** Das selbst-signierte Dev-Cert `blitzbot-dev` liegt in der Login-Keychain (mit Codesign-Trust gesetzt). Ad-hoc Signing invalidiert bei jedem Re-Sign die TCC-Permissions (Accessibility, Input Monitoring) UND die Keychain-ACL (Anthropic-API-Key). Der User muss dann jedes Mal alles neu bestätigen. Mit dem stabilen Cert überleben diese Permissions alle Rebuilds.
+
+   Falls das Cert mal nicht da ist (`security find-identity -p codesigning -v` zeigt 0): neu erstellen via
+   ```
+   openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 3650 -nodes \
+     -subj "/CN=blitzbot-dev" -addext "extendedKeyUsage=critical,codeSigning"
+   openssl pkcs12 -export -inkey /tmp/k.pem -in /tmp/c.pem -out /tmp/c.p12 \
+     -passout pass:blitzbot -name "blitzbot-dev" -legacy
+   security import /tmp/c.p12 -k ~/Library/Keychains/login.keychain-db -P blitzbot \
+     -T /usr/bin/codesign -T /usr/bin/security
+   security set-key-partition-list -S "apple-tool:,apple:,codesign:" -s -k "" \
+     ~/Library/Keychains/login.keychain-db
+   security add-trusted-cert -r trustRoot -p codeSign \
+     -k ~/Library/Keychains/login.keychain-db /tmp/c.pem
+   rm /tmp/k.pem /tmp/c.pem /tmp/c.p12
+   ```
 
 2. **Logging**: Nie `print()` oder `FileHandle.standardError` — **immer `Log.write(...)`** aus `Log.swift`. Schreibt nach `~/.blitzbot/logs/blitzbot.log`, überlebt App-Neustart, ist per `tail` beobachtbar.
 
