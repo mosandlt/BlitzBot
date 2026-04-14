@@ -171,8 +171,11 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
 | 3   | Plus     | `⌘⌥3`  | "Geschrieben sprechen."             | LLM → Füllwörter/Grammatik glätten, Stimme bleibt |
 | 4   | Rage     | `⌘⌥4`  | "Frust rein. Entspannt raus."       | LLM → Beleidigungen raus, Kritik bleibt |
 | 5   | Emoji    | `⌘⌥5`  | "Sprache rein. Text mit Emojis raus." | Original + dezente Emojis |
+| 6   | Prompt   | `⌘⌥6`  | "Idee rein. Prompt raus."           | LLM verwandelt lose gesprochene Idee in einen sauberen, tool-agnostischen Prompt (ChatGPT/Claude/Cursor/Aider/Copilot/Gemini). Output ist der Prompt selbst, nicht das Ergebnis. |
 
-Jeder Modus hat anpassbaren System-Prompt in den Settings.
+Jeder Modus hat anpassbaren System-Prompt in den Settings (leer = Sprach-abhängiger Default).
+
+**Sprach-Routing (DE / EN)**: Whisper läuft mit `-l auto`, Content-basierter Stopword-Detector entscheidet finale Sprache (weil Whispers eigene Auto-Detect auf kurzen Clips unzuverlässig ist). Priorität in `ModeProcessor.resolveLanguage`: user-Override aus Settings > Content-Detector > Whisper-Metadata. Claude-Prompts gibt es pro Modus in zwei Sprachen (`defaultSystemPromptGerman` / `defaultSystemPromptEnglish` in `Mode.swift`).
 
 ### UI-Copy-Regeln
 
@@ -202,7 +205,7 @@ Jeder Modus hat anpassbaren System-Prompt in den Settings.
 - **Sprache**: Swift 5.9+, SwiftUI (macOS 13+)
 - **Build**: Swift Package Manager (`swift build`), nicht Xcode-Projekt
 - **STT**: whisper.cpp lokal via `whisper-cli` CLI (nicht Whisper API) — offline, privat
-- **LLM-Glättung** (Business/Plus/Rage/Emoji): Anthropic Claude API
+- **LLM-Verarbeitung** (Business/Plus/Rage/Emoji/Prompt): Anthropic Claude API
 - **Hotkeys**: `KeyboardShortcuts` von Sindre Sorhus (SPM, `<1.15.0`)
 - **Auto-Paste**: `NSPasteboard` + `CGEvent` Cmd+V-Simulation (Accessibility-Permission)
 - **Audio**: `AVAudioEngine` mit Tap für RMS-Pegel (für HUD-Waveform)
@@ -221,12 +224,13 @@ Stop-Tap → wav fertig geschrieben
    ↓
 WhisperTranscriber.transcribe() [whisper-cli -l de --prompt "<vocab>" …]
    ↓
-Mode-Router:
-   ├─ Normal  → Text direkt
-   ├─ Business → Claude (business prompt)
-   ├─ Plus    → Claude (glätten, Stimme behalten)
-   ├─ Rage    → Claude (entschärfen, Kritik bleibt)
-   └─ Emoji   → Claude (Emojis ergänzen)
+Mode-Router (Prompt pro Sprache aus Mode.swift):
+   ├─ Normal   → Text direkt (kein Cloud-Call)
+   ├─ Business → Claude (business prompt, DE oder EN)
+   ├─ Plus     → Claude (glätten, Stimme behalten)
+   ├─ Rage     → Claude (entschärfen, Kritik bleibt)
+   ├─ Emoji    → Claude (Emojis ergänzen)
+   └─ Prompt   → Claude (Idee → sauberer Prompt für ein anderes AI-Tool)
    ↓
 Paster.pasteText() → NSPasteboard + CGEvent Cmd+V (120ms Delay, cgAnnotatedSessionEventTap)
    ↓
@@ -238,23 +242,39 @@ Text erscheint in aktiver App
 ```
 Sources/blitzbot/
   blitzbotApp.swift        ← @main + AppDelegate + MenuBarExtra + Windows
-  AppConfig.swift          ← UserDefaults, Keychain, Vokabular, Prompts
-  Mode.swift               ← enum mit displayName, tagline, symbol, defaultPrompt
-  HotkeyManager.swift      ← KeyboardShortcuts-Bindings pro Mode
-  ModeProcessor.swift      ← State-Machine, Timer, Dispatch an Whisper+Claude
-  AudioRecorder.swift      ← AVAudioEngine + RMS-Level-Publishing
-  WhisperTranscriber.swift ← subprocess wrapper um whisper-cli
+  AppInfo.swift            ← Version, Repo-URL, Releases-API-URL (zentrale Konstanten)
+  AppConfig.swift          ← UserDefaults, Keychain, Vokabular, outputLanguage, customPrompts
+  Mode.swift               ← enum mit displayName, tagline, symbol, defaultSystemPrompt(for:) DE/EN
+  HotkeyManager.swift      ← KeyboardShortcuts-Bindings pro Mode + v1.0.1-Migration
+  ModeProcessor.swift      ← State-Machine, Timer, Dispatch an Whisper+Claude, resolveLanguage + Content-Detektor
+  AudioRecorder.swift      ← AVAudioEngine + RMS-Level-Publishing für HUD-Waveform
+  WhisperTranscriber.swift ← subprocess wrapper um whisper-cli, JSON-Parse für erkannte Sprache
   AnthropicClient.swift    ← Claude API call
-  Paster.swift             ← Clipboard + Cmd+V-Simulation
-  KeychainStore.swift      ← API-Key in Keychain
-  Log.swift                ← ~/.blitzbot/logs/blitzbot.log
-  Permissions.swift        ← TCC-Status-Checker
-  MenuBarView.swift        ← Popover-Content
-  SettingsView.swift       ← TabView mit Allgemein/Hotkeys/Prompts/Vokabular/Setup/Über
-  PermissionsView.swift    ← Onboarding-Wizard
-  RecordingHUD.swift       ← NSPanel Floating-HUD
-  Updater.swift            ← GitHub Releases Auto-Update-Check
-  Localizable.xcstrings    ← DE + EN (wenn Localized.xcstrings, sonst .strings pro lproj)
+  Paster.swift             ← NSPasteboard + CGEvent Cmd+V-Simulation (nonactivating)
+  KeychainStore.swift      ← API-Key in Keychain (service de.blitzbot.mac, account anthropic-api-key)
+  Log.swift                ← ~/.blitzbot/logs/blitzbot.log (append-only, per-line timestamp)
+  Permissions.swift        ← TCC-Status-Checker (Mic/Accessibility/Whisper-Binary/Whisper-Model)
+  MenuBarView.swift        ← Popover-Content (Header + Mode-List + Footer mit Quit)
+  SettingsView.swift       ← Custom Icon-Toolbar (6 Tabs: Allgemein/Hotkeys/Prompts/Vokabular/Setup/Über)
+  PermissionsView.swift    ← Onboarding-Wizard (Mic, Accessibility, Whisper-Binary, Whisper-Model)
+  RecordingHUD.swift       ← NSPanel Floating-HUD mit Timer + Waveform + Mode-Pills + Stop-Button + Sprach-Badge
+  Updater.swift            ← GitHub-Releases-API-Check + Download + Install-in-place
+
+blitzbot.app/Contents/
+  Info.plist               ← Bundle-ID de.blitzbot.app, LSUIElement=YES, Version, CFBundleLocalizations
+  Resources/
+    AppIcon.icns           ← Icon (generiert via tools/make-icon.swift)
+    en.lproj/
+      Localizable.strings  ← englische Strings (mode names + taglines bisher, rest via defaultValue)
+
+tools/
+  make-icon.swift          ← rendert blitzbot.iconset → AppIcon.icns
+
+build-app.sh               ← Default (blitzbot-dev) / --sign <id> / --release (ad-hoc zip)
+setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
+
+.git/hooks/pre-push        ← repo-lokal, scannt Diff auf Secrets + PII (regel 9)
+.git/info/exclude          ← repo-lokal, git-ignore ohne Push (für private Session-Notizen)
 ```
 
 ---
@@ -264,7 +284,7 @@ Sources/blitzbot/
 - **Audio-Dateien**: `/tmp/blitzbot-<uuid>.wav` — nach Transkription **immer** löschen (`defer` in `WhisperTranscriber.transcribe`). Niemals in `~`, niemals als Backup.
 - **API-Keys**: Keychain (`KeychainStore.swift`). Nie `UserDefaults`. Nie ins Repo. Niemals loggen.
 - **Transkripte nicht loggen**: im Dev-Log sind Transkripte nur zum Debuggen drin — für Release `Log.write("TRANSCRIPT: …")`-Calls entfernen oder auf `len=<n>` reduzieren.
-- **Cloud-Calls** (Claude): User weiß durch README + Settings, dass Business/Plus/Rage/Emoji den Text an Anthropic schicken. Normal-Modus macht keine Cloud-Calls.
+- **Cloud-Calls** (Claude): User weiß durch README + Settings, dass Business/Plus/Rage/Emoji/Prompt den Text an Anthropic schicken. Normal-Modus macht keine Cloud-Calls.
 - **Vor jedem Push**: `bosch-secrets-scan` laufen lassen.
 
 ## Nicht tun
@@ -279,9 +299,29 @@ Sources/blitzbot/
 
 ---
 
+## Aktueller Stand
+
+- **Aktuelle Version**: v1.0.5 (Stand: 2026-04-14)
+- **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
+- **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
+- **Dev-Signing**: `blitzbot-dev` Cert (self-signed, in Login-Keychain, Codesigning-Trust gesetzt). Mit diesem Cert signierte Rebuilds überleben TCC + Keychain-ACL.
+- **Bundle-ID**: `de.blitzbot.app`
+- **Keychain-Service für API-Key**: `de.blitzbot.mac` / account `anthropic-api-key`
+
+## Release-Historie (Kurz)
+
+| Version | Kernänderung |
+|---|---|
+| v1.0.5 | Ad-hoc Release-Pipeline, Gatekeeper-Workaround-Docs, bilingual Release Notes |
+| v1.0.4 | Fix: englischer Input → englischer Output (customPrompts sauber getrennt von Defaults) |
+| v1.0.3 | Mode 6 repurposed: "AI Command" → "Prompt" (Prompt-Optimizer); Content-Sprach-Erkennung als Whisper-Override |
+| v1.0.2 | 6. Modus (AI Command), automatische Sprach-Erkennung (DE/EN), manueller Override |
+| v1.0.1 | HUD Mode-Switcher + Stop-Button, Cmd+Q-Fix, Settings-UI mit Icon-Toolbar, Hotkey-Migration |
+| v1.0.0 | Initiales Release: 5 Modi (Normal/Business/Plus/Rage/Emoji), Floating-HUD, Vokabular, Auto-Updater |
+
 ## Offene Punkte
 
-- Stabiles Dev-Code-Signing-Cert (manueller Schritt vom User in Keychain Access)
+- Apple Developer Program + Notarisierung (wenn User-Basis >0 wird, 99 €/Jahr, ersetzt ad-hoc)
 - Evtl. Hold-to-Talk als Alternative zu Toggle
 - Lokales Whisper-Modell: bereits gesetzt (large-v3-turbo) — evtl. kleineres als Option
 - Echtes Notarisieren für Release (braucht Apple-Dev-Account)
