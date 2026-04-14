@@ -40,6 +40,8 @@ final class ModeProcessor: ObservableObject {
     @Published var isPaused: Bool = false
     /// Auto-stop timeout configured for the current recording (for HUD progress display).
     @Published var autoStopTimeoutForDisplay: TimeInterval = 45
+    /// True when audio level is above the voice threshold — drives "Stimme erkannt" badge.
+    @Published var hasVoiceActivity: Bool = false
 
     let recorder = AudioRecorder()
     private var isRecording = false
@@ -49,6 +51,7 @@ final class ModeProcessor: ObservableObject {
     private var inactivityTimerDeadline: Date?
     private var silenceBannerTimer: Timer?
     private var levelCancellable: AnyCancellable?
+    private var voiceActivityCancellable: AnyCancellable?
     private static let silenceThreshold: Float = 0.03
     private static let silenceBannerDelay: TimeInterval = 5
 
@@ -128,11 +131,24 @@ final class ModeProcessor: ObservableObject {
                 }
             }
             Log.write("REC start mode=\(mode) file=\(url.lastPathComponent)")
+            startVoiceActivityMonitor()
             startInactivityTimer(config: config)
         } catch {
             Log.write("REC start FAILED: \(error)")
             status = .fehler(error.localizedDescription)
         }
+    }
+
+    private func startVoiceActivityMonitor() {
+        voiceActivityCancellable = recorder.$level
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                guard let self, self.isRecording, !self.isPaused else {
+                    self?.hasVoiceActivity = false
+                    return
+                }
+                self.hasVoiceActivity = level > Self.silenceThreshold
+            }
     }
 
     private func startInactivityTimer(config: AppConfig) {
@@ -189,8 +205,10 @@ final class ModeProcessor: ObservableObject {
         silenceBannerTimer?.invalidate()
         silenceBannerTimer = nil
         levelCancellable = nil
+        voiceActivityCancellable = nil
         isInSilence = false
         showSilenceBanner = false
+        hasVoiceActivity = false
         autoStopSecondsLeft = nil
     }
 

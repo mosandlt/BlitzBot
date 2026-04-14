@@ -161,10 +161,9 @@ private struct HUDView: View {
                     .foregroundStyle(.white)
             }
 
-            // ── Controls row: Pause/Resume + Auto-Stop clock ─────────────
-            if isRecording {
-                controlsRow
-            }
+            // ── Controls row: Pause/Resume + voice badge + Auto-Stop clock ─────────────
+            controlsRow
+                .opacity(isRecording ? 1 : 0)
 
             // ── Real waveform ────────────────────────────────────────────
             WaveformView(
@@ -173,28 +172,6 @@ private struct HUDView: View {
                 active: isRecording && !processor.isPaused
             )
             .frame(height: 72)
-            .overlay(alignment: .bottomTrailing) {
-                // "Stimme erkannt" badge — fades in when voice is detected, out on silence
-                let voiceActive = isRecording && !processor.isPaused && recorder.level > 0.015
-                HStack(spacing: 3) {
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 5, height: 5)
-                    Text("Stimme erkannt")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.85))
-                }
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule()
-                        .fill(Color.white.opacity(0.1))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-                )
-                .opacity(voiceActive ? 1 : 0)
-                .animation(.easeInOut(duration: 0.3), value: voiceActive)
-                .padding(4)
-            }
 
             // ── Silence banner — reserved height, fades in/out (no layout jump) ──
             autoStopBannerReserved
@@ -250,6 +227,27 @@ private struct HUDView: View {
                 .foregroundStyle(.white.opacity(0.9))
             }
             .buttonStyle(.plain)
+
+            Spacer()
+
+            // "Stimme erkannt" badge — centred between Pause and autoStopClock
+            HStack(spacing: 3) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 5, height: 5)
+                Text("Stimme erkannt")
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.1))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
+            )
+            .opacity(processor.hasVoiceActivity && !processor.isPaused ? 1 : 0)
+            .animation(.easeInOut(duration: 0.3), value: processor.hasVoiceActivity)
 
             Spacer()
 
