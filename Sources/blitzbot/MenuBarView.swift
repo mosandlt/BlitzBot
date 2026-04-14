@@ -21,6 +21,18 @@ struct MenuBarView: View {
         }
         .frame(width: 320)
         .padding(.vertical, 6)
+        .onChange(of: config.llmProvider) { _ in
+            processor.clearErrorIfAny()
+        }
+    }
+
+    private var displayStatusLabel: String {
+        if case .fehler(let msg) = processor.status,
+           msg.lowercased().contains("ollama"),
+           config.llmProvider != .ollama {
+            return ModeProcessor.Status.bereit.label
+        }
+        return processor.status.label
     }
 
     private var header: some View {
@@ -46,11 +58,24 @@ struct MenuBarView: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
-            Text(processor.status.label).font(.caption)
+            Text(displayStatusLabel).font(.caption)
+        }
+    }
+
+    private var providerKeyWarning: String? {
+        switch config.llmProvider {
+        case .anthropic: return config.hasAPIKey ? nil : "Kein Anthropic API-Key"
+        case .openai:    return config.hasOpenAIKey ? nil : "Kein OpenAI API-Key"
+        case .ollama:    return nil  // Ollama is local, no key required
         }
     }
 
     private var statusColor: Color {
+        if case .fehler(let msg) = processor.status,
+           msg.lowercased().contains("ollama"),
+           config.llmProvider != .ollama {
+            return .green
+        }
         switch processor.status {
         case .bereit, .fertig: return .green
         case .aufnahme:        return .red
@@ -61,9 +86,9 @@ struct MenuBarView: View {
 
     private var footer: some View {
         VStack(spacing: 6) {
-            if !config.hasAPIKey {
+            if let warning = providerKeyWarning {
                 HStack {
-                    Label("Kein API-Key", systemImage: "exclamationmark.triangle")
+                    Label(warning, systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
                     Spacer()
                 }

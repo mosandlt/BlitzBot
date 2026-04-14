@@ -25,6 +25,12 @@ final class ModeProcessor: ObservableObject {
 
     @Published var status: Status = .bereit
     @Published var activeMode: Mode?
+
+    /// Clears a stuck `.fehler` back to `.bereit`. No-op if another status is active.
+    func clearErrorIfAny() {
+        if case .fehler = status { status = .bereit }
+    }
+
     @Published var elapsed: TimeInterval = 0
     @Published var detectedLanguage: String?
     /// Per-recording toggle: when on, a Return is simulated after the paste so chat-apps submit.
@@ -248,12 +254,27 @@ final class ModeProcessor: ObservableObject {
             let prompt = config.prompt(for: mode, language: resolvedLanguage)
             if !prompt.isEmpty {
                 status = .formuliert
-                guard let apiKey = KeychainStore.loadAPIKey(), !apiKey.isEmpty else {
-                    status = .fehler("Kein Anthropic API Key")
-                    return
+                switch config.llmProvider {
+                case .anthropic:
+                    guard let apiKey = KeychainStore.loadAPIKey(), !apiKey.isEmpty else {
+                        status = .fehler("Kein Anthropic API Key")
+                        return
+                    }
+                    let client = AnthropicClient(apiKey: apiKey, model: config.model)
+                    output = try await client.rewrite(text: raw, systemPrompt: prompt)
+                case .openai:
+                    guard let apiKey = KeychainStore.loadOpenAIKey(), !apiKey.isEmpty else {
+                        status = .fehler("Kein OpenAI API Key")
+                        return
+                    }
+                    let client = OpenAIClient(apiKey: apiKey, model: config.openaiModel)
+                    output = try await client.rewrite(text: raw, systemPrompt: prompt)
+                case .ollama:
+                    let client = OllamaClient(baseURL: config.ollamaBaseURL,
+                                              model: config.ollamaModel,
+                                              apiKey: KeychainStore.loadOllamaKey())
+                    output = try await client.rewrite(text: raw, systemPrompt: prompt)
                 }
-                let client = AnthropicClient(apiKey: apiKey, model: config.model)
-                output = try await client.rewrite(text: raw, systemPrompt: prompt)
             }
             let outputTrimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !outputTrimmed.isEmpty else {

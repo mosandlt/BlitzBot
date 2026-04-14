@@ -218,7 +218,7 @@ Six tabs under **⚙ Settings**:
 
 | Tab        | What's inside |
 |------------|---------------|
-| **General**    | Anthropic API key, Claude model selection (Sonnet/Opus/Haiku), output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path |
+| **General**    | **LLM provider picker** (Anthropic / OpenAI / Ollama) with per-provider fields: Anthropic (API key + Sonnet/Opus/Haiku), OpenAI (API key + `gpt-4o-mini`/`gpt-4o` + free-text), Ollama (base URL + dynamic model list with health indicator + optional key). Plus: output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path. |
 | **Hotkeys**    | One recorder field per mode. Click, press keys. Defaults shown. Any conflicts are handled by the OS (you'll see it if a combo is reserved). |
 | **Prompts**    | Editable system prompt per mode. Leave empty = language-aware default. Add text to either *replace* the default or *append* to it (toggle per mode). |
 | **Vocabulary** | Proper nouns, product names, jargon, colleagues. Passed to Whisper as `--prompt`. Improves spelling accuracy dramatically. |
@@ -238,12 +238,13 @@ whisper-cli (local, offline, no network)
     ↓
 text
     ↓
-mode router:
-    ├─ Normal   → text directly
-    ├─ Business → Claude API call with business prompt
-    ├─ Plus     → Claude API call with light-touch polish prompt
-    ├─ Rage     → Claude API call with de-escalation prompt
-    └─ Emoji    → Claude API call with emoji-insertion prompt
+mode router (for non-Normal modes, LLM provider is configurable: Claude / OpenAI / Ollama):
+    ├─ Normal   → text directly (no cloud call, regardless of provider)
+    ├─ Business → LLM call with business prompt
+    ├─ Plus     → LLM call with light-touch polish prompt
+    ├─ Rage     → LLM call with de-escalation prompt
+    ├─ Emoji    → LLM call with emoji-insertion prompt
+    └─ Prompt   → LLM call that turns a loose idea into a tool-agnostic prompt
     ↓
 NSPasteboard.general (writes the result)
     ↓
@@ -574,6 +575,16 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.0.7 (2026-04-14)
+
+- **Multi-LLM provider support**: switch between **Anthropic Claude**, **OpenAI ChatGPT**, and **Ollama** (local LLM). Per-provider model picker and API key. Normal mode remains local regardless of provider.
+  - Anthropic: existing flow (Sonnet/Opus/Haiku, `x-api-key`).
+  - OpenAI: `gpt-4o-mini` / `gpt-4o` + free-text model field, bearer auth, `/v1/chat/completions`.
+  - Ollama: base URL (default `http://localhost:11434`), dynamic model list from `/api/tags` with green/red health indicator + refresh button, optional bearer auth, 300 s chat timeout for local-model latency.
+- **Provider-aware error suppression**: the stale "Ollama nicht erreichbar" banner no longer leaks into the menu-bar header when another provider is active. Errors get auto-cleared when the provider changes.
+- **Provider-aware key warning**: menu-bar footer warns about missing Anthropic/OpenAI keys only for the currently selected provider. Ollama shows no key warning (local use often needs none).
+- **Settings → General** restructured: LLM-Provider picker at top of the tab, provider-specific section below (keys, models, URL, health), rest unchanged.
 
 ### v1.0.6 (2026-04-14)
 

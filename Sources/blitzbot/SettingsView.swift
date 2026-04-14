@@ -11,6 +11,14 @@ struct SettingsView: View {
     @EnvironmentObject var config: AppConfig
     @State private var apiKeyInput = ""
     @State private var keyStatus = ""
+    @State private var openaiKeyInput = ""
+    @State private var openaiKeyStatus = ""
+    @State private var ollamaKeyInput = ""
+    @State private var ollamaKeyStatus = ""
+    @State private var ollamaReachable: Bool? = nil
+    @State private var ollamaAvailableModels: [String] = []
+    @State private var ollamaRefreshing = false
+    @State private var ollamaRefreshError: String?
     @State private var selectedTab: SettingsTab = .general
 
     @Environment(\.openWindow) private var openWindow
@@ -254,29 +262,24 @@ struct SettingsView: View {
 
     private var general: some View {
         Form {
-            Section("Anthropic API Key") {
-                HStack {
-                    SecureField("sk-ant-…", text: $apiKeyInput)
-                    Button("Speichern") { saveKey() }.disabled(apiKeyInput.isEmpty)
-                    Button("Löschen") { deleteKey() }.disabled(!config.hasAPIKey)
-                }
-                HStack {
-                    Image(systemName: config.hasAPIKey ? "checkmark.circle.fill" : "xmark.circle")
-                        .foregroundStyle(config.hasAPIKey ? .green : .orange)
-                    Text(config.hasAPIKey ? "Key in Keychain gespeichert" : "Kein Key gesetzt")
-                        .font(.caption)
-                    if !keyStatus.isEmpty {
-                        Text(keyStatus).font(.caption).foregroundStyle(.secondary)
+            Section("LLM-Provider") {
+                Picker("Anbieter", selection: $config.llmProvider) {
+                    ForEach(LLMProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
                     }
                 }
+                .pickerStyle(.segmented)
+                Text("Wähle, wohin Business/Plus/Rage/Emoji/Prompt-Modi geschickt werden. Der Normal-Modus bleibt lokal.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Section("Claude-Modell") {
-                Picker("Modell", selection: $config.model) {
-                    Text("Sonnet 4.5 (schnell, günstig)").tag("claude-sonnet-4-5")
-                    Text("Opus 4.5 (höchste Qualität)").tag("claude-opus-4-5")
-                    Text("Haiku 4.5 (sehr schnell)").tag("claude-haiku-4-5")
+
+            Group {
+                switch config.llmProvider {
+                case .anthropic: anthropicSettings
+                case .openai:    openaiSettings
+                case .ollama:    ollamaSettings
                 }
-                .onChange(of: config.model) { _ in config.save() }
             }
             Section("Ausgabesprache / Output Language") {                Picker("Sprache", selection: $config.outputLanguage) {
                     Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
@@ -321,6 +324,171 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var anthropicSettings: some View {
+        Section("Anthropic API Key") {
+            HStack {
+                SecureField("sk-ant-…", text: $apiKeyInput)
+                Button("Speichern") { saveKey() }.disabled(apiKeyInput.isEmpty)
+                Button("Löschen") { deleteKey() }.disabled(!config.hasAPIKey)
+            }
+            HStack {
+                Image(systemName: config.hasAPIKey ? "checkmark.circle.fill" : "xmark.circle")
+                    .foregroundStyle(config.hasAPIKey ? .green : .orange)
+                Text(config.hasAPIKey ? "Key in Keychain gespeichert" : "Kein Key gesetzt")
+                    .font(.caption)
+                if !keyStatus.isEmpty {
+                    Text(keyStatus).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        Section("Claude-Modell") {
+            Picker("Modell", selection: $config.model) {
+                Text("Sonnet 4.5 (schnell, günstig)").tag("claude-sonnet-4-5")
+                Text("Opus 4.5 (höchste Qualität)").tag("claude-opus-4-5")
+                Text("Haiku 4.5 (sehr schnell)").tag("claude-haiku-4-5")
+            }
+            .onChange(of: config.model) { _ in config.save() }
+        }
+    }
+
+    @ViewBuilder
+    private var openaiSettings: some View {
+        Section("OpenAI API Key") {
+            HStack {
+                SecureField("sk-…", text: $openaiKeyInput)
+                Button("Speichern") { saveOpenAIKey() }.disabled(openaiKeyInput.isEmpty)
+                Button("Löschen") { deleteOpenAIKey() }.disabled(!config.hasOpenAIKey)
+            }
+            HStack {
+                Image(systemName: config.hasOpenAIKey ? "checkmark.circle.fill" : "xmark.circle")
+                    .foregroundStyle(config.hasOpenAIKey ? .green : .orange)
+                Text(config.hasOpenAIKey ? "Key in Keychain gespeichert" : "Kein Key gesetzt")
+                    .font(.caption)
+                if !openaiKeyStatus.isEmpty {
+                    Text(openaiKeyStatus).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        Section("OpenAI-Modell") {
+            Picker("Modell", selection: $config.openaiModel) {
+                Text("gpt-4o-mini (schnell, günstig)").tag("gpt-4o-mini")
+                Text("gpt-4o (höchste Qualität)").tag("gpt-4o")
+            }
+            HStack {
+                Text("oder frei").frame(width: 60, alignment: .leading)
+                TextField("z.B. gpt-4o-2024-11-20", text: $config.openaiModel)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Text("Standardmäßig gpt-4o-mini. Für komplexere Umformulierungen gpt-4o.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var ollamaSettings: some View {
+        Section("Ollama-Server") {
+            HStack {
+                Text("URL").frame(width: 60, alignment: .leading)
+                TextField("http://localhost:11434", text: $config.ollamaBaseURL)
+                Button {
+                    Task { await refreshOllama() }
+                } label: {
+                    if ollamaRefreshing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .disabled(ollamaRefreshing)
+            }
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(ollamaStatusColor)
+                    .frame(width: 8, height: 8)
+                Text(ollamaStatusText).font(.caption).foregroundStyle(.secondary)
+                if let err = ollamaRefreshError, !err.isEmpty {
+                    Text("— \(err)").font(.caption).foregroundStyle(.red)
+                }
+            }
+        }
+        Section("Ollama-Modell") {
+            if ollamaAvailableModels.isEmpty {
+                HStack {
+                    TextField("llama3.2:latest", text: $config.ollamaModel)
+                }
+                Text("Keine Modelle gefunden. Erst „Aktualisieren“ drücken oder manuell eingeben (z.B. `llama3.2:latest`, `mistral:latest`).")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Picker("Modell", selection: $config.ollamaModel) {
+                    ForEach(ollamaAvailableModels, id: \.self) { name in
+                        Text(name).tag(name)
+                    }
+                    if !ollamaAvailableModels.contains(config.ollamaModel) {
+                        Text("\(config.ollamaModel) (nicht installiert)").tag(config.ollamaModel)
+                    }
+                }
+            }
+        }
+        Section("Ollama API Key (optional)") {
+            HStack {
+                SecureField("nur bei Authentifizierung", text: $ollamaKeyInput)
+                Button("Speichern") { saveOllamaKey() }.disabled(ollamaKeyInput.isEmpty)
+                Button("Löschen") { deleteOllamaKey() }.disabled(!config.hasOllamaKey)
+            }
+            HStack {
+                Image(systemName: config.hasOllamaKey ? "checkmark.circle.fill" : "minus.circle")
+                    .foregroundStyle(config.hasOllamaKey ? .green : .secondary)
+                Text(config.hasOllamaKey ? "Key in Keychain gespeichert" : "Kein Key nötig für lokales Ollama")
+                    .font(.caption)
+                if !ollamaKeyStatus.isEmpty {
+                    Text(ollamaKeyStatus).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var ollamaStatusColor: Color {
+        switch ollamaReachable {
+        case .some(true):  return .green
+        case .some(false): return .red
+        case .none:        return .secondary
+        }
+    }
+
+    private var ollamaStatusText: String {
+        switch ollamaReachable {
+        case .some(true):  return "Ollama erreichbar (\(ollamaAvailableModels.count) Modelle)"
+        case .some(false): return "Ollama nicht erreichbar"
+        case .none:        return "Status unbekannt — „Aktualisieren“ drücken"
+        }
+    }
+
+    private func refreshOllama() async {
+        ollamaRefreshing = true
+        ollamaRefreshError = nil
+        let client = OllamaClient(baseURL: config.ollamaBaseURL,
+                                  model: config.ollamaModel,
+                                  apiKey: KeychainStore.loadOllamaKey())
+        let reachable = await client.healthCheck()
+        ollamaReachable = reachable
+        if reachable {
+            do {
+                let models = try await client.listModels()
+                ollamaAvailableModels = models
+                Log.write("Ollama: \(models.count) Modelle gefunden")
+            } catch {
+                ollamaAvailableModels = []
+                ollamaRefreshError = error.localizedDescription
+                Log.write("Ollama listModels failed: \(error.localizedDescription)")
+            }
+        } else {
+            ollamaAvailableModels = []
+        }
+        ollamaRefreshing = false
     }
 
     private var hotkeys: some View {
@@ -449,6 +617,36 @@ struct SettingsView: View {
     private func deleteKey() {
         config.removeAPIKey()
         keyStatus = "Gelöscht."
+    }
+
+    private func saveOpenAIKey() {
+        do {
+            try config.setOpenAIKey(openaiKeyInput)
+            openaiKeyInput = ""
+            openaiKeyStatus = "Gespeichert."
+        } catch {
+            openaiKeyStatus = "Fehler: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteOpenAIKey() {
+        config.removeOpenAIKey()
+        openaiKeyStatus = "Gelöscht."
+    }
+
+    private func saveOllamaKey() {
+        do {
+            try config.setOllamaKey(ollamaKeyInput)
+            ollamaKeyInput = ""
+            ollamaKeyStatus = "Gespeichert."
+        } catch {
+            ollamaKeyStatus = "Fehler: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteOllamaKey() {
+        config.removeOllamaKey()
+        ollamaKeyStatus = "Gelöscht."
     }
 }
 

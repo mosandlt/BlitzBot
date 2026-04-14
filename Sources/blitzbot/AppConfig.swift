@@ -30,6 +30,20 @@ enum OutputLanguage: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum LLMProvider: String, CaseIterable, Identifiable, Codable {
+    case anthropic, openai, ollama
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .anthropic: return "Anthropic Claude"
+        case .openai:    return "OpenAI ChatGPT"
+        case .ollama:    return "Ollama (lokal)"
+        }
+    }
+}
+
 final class AppConfig: ObservableObject {
     @Published var whisperBinary: String
     @Published var whisperModel: String
@@ -45,6 +59,14 @@ final class AppConfig: ObservableObject {
     @Published var outputLanguage: OutputLanguage
     @Published var autoStopEnabled: Bool
     @Published var autoStopTimeout: TimeInterval
+
+    // Multi-provider LLM settings
+    @Published var llmProvider: LLMProvider { didSet { defaults.set(llmProvider.rawValue, forKey: "llmProvider") } }
+    @Published var openaiModel: String { didSet { defaults.set(openaiModel, forKey: "openaiModel") } }
+    @Published var ollamaBaseURL: String { didSet { defaults.set(ollamaBaseURL, forKey: "ollamaBaseURL") } }
+    @Published var ollamaModel: String { didSet { defaults.set(ollamaModel, forKey: "ollamaModel") } }
+    @Published var hasOpenAIKey: Bool
+    @Published var hasOllamaKey: Bool
 
     private let defaults = UserDefaults.standard
     private static let promptMigrationKey = "promptMigration.v1_0_4.customOnly"
@@ -99,6 +121,19 @@ final class AppConfig: ObservableObject {
         self.autoStopEnabled = storedAutoStop != nil ? defaults.bool(forKey: "autoStopEnabled") : true
         let storedTimeout = defaults.double(forKey: "autoStopTimeout")
         self.autoStopTimeout = storedTimeout > 0 ? storedTimeout : 60
+
+        // LLM provider + per-provider settings
+        if let raw = defaults.string(forKey: "llmProvider"),
+           let provider = LLMProvider(rawValue: raw) {
+            self.llmProvider = provider
+        } else {
+            self.llmProvider = .anthropic
+        }
+        self.openaiModel = defaults.string(forKey: "openaiModel") ?? "gpt-4o-mini"
+        self.ollamaBaseURL = defaults.string(forKey: "ollamaBaseURL") ?? "http://localhost:11434"
+        self.ollamaModel = defaults.string(forKey: "ollamaModel") ?? "llama3.2:latest"
+        self.hasOpenAIKey = KeychainStore.loadOpenAIKey()?.isEmpty == false
+        self.hasOllamaKey = KeychainStore.loadOllamaKey()?.isEmpty == false
     }
 
     var vocabularyPrompt: String {
@@ -173,5 +208,27 @@ final class AppConfig: ObservableObject {
     func removeAPIKey() {
         KeychainStore.deleteAPIKey()
         hasAPIKey = false
+    }
+
+    // MARK: - Per-provider key management
+
+    func setOpenAIKey(_ key: String) throws {
+        try KeychainStore.saveOpenAIKey(key)
+        hasOpenAIKey = !key.isEmpty
+    }
+
+    func removeOpenAIKey() {
+        KeychainStore.deleteOpenAIKey()
+        hasOpenAIKey = false
+    }
+
+    func setOllamaKey(_ key: String) throws {
+        try KeychainStore.saveOllamaKey(key)
+        hasOllamaKey = !key.isEmpty
+    }
+
+    func removeOllamaKey() {
+        KeychainStore.deleteOllamaKey()
+        hasOllamaKey = false
     }
 }
