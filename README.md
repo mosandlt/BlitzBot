@@ -35,6 +35,7 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 - [Architecture](#architecture)
 - [Contributing](#contributing)
 - [Roadmap](#roadmap)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -52,6 +53,8 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 ### Switch mode mid-recording
 
 Start a recording with `⌘⌥1` (Normal), change your mind halfway through, press `⌘⌥4` while still speaking — the recording keeps going, but will be processed as Rage when you stop. The floating HUD reflects the current mode live.
+
+Or click directly: the HUD has five **mode pills** at the bottom. Click any pill during recording to switch live. The **Stop** button on the right ends the recording with a mouse click — useful when your keyboard is full of other input and you don't want to hit the hotkey.
 
 ### Everything customizable
 
@@ -132,12 +135,13 @@ Normal mode runs entirely offline — no key, no cloud calls, nothing.
 
 During recording, a floating panel shows up in the middle of your screen:
 
-- Top-left: mode icon + name
-- Top-right: elapsed time (`mm:ss`, monospaced)
-- Middle: 22-band waveform that reacts to your mic input
-- Bottom: status text — *Recording… → Transcribing… → Formulating… → Done*
+- **Top-left**: mode icon + name
+- **Top-right**: elapsed time (`mm:ss`, monospaced)
+- **Middle**: 22-band waveform that reacts to your mic input
+- **Status line**: *Recording… → Transcribing… → Formulating… → Done*
+- **Bottom row**: five mode pills (click to switch mode live) + a red **Stop** button
 
-The HUD does **not** steal focus — it's an `NSPanel` with `nonactivatingPanel` + `ignoresMouseEvents`, visible on all Spaces including fullscreen apps. Your target app keeps focus, so the Cmd+V actually pastes where you expect.
+The HUD does **not** steal focus — it's an `NSPanel` with `nonactivatingPanel`, visible on all Spaces including fullscreen apps. Your target app keeps focus, so the Cmd+V actually pastes where you expect. The mode pills and Stop button work via mouse click because the panel accepts events without activating.
 
 ### The menu bar icon
 
@@ -436,6 +440,34 @@ I personally won't maintain the port — I can't test on OSes I don't use. But I
 - [ ] Custom "Translate" mode
 
 Got other ideas? Open an issue.
+
+---
+
+## Changelog
+
+### v1.0.1 (2026-04-14)
+
+- **HUD mode switcher**: five clickable mode pills + a red Stop button inside the floating recording HUD. Switch modes or end the recording without reaching for the keyboard. Panel still doesn't steal focus.
+- **Cmd+Q / Quit fixed**: the *Beenden* button in the menu bar popover now properly terminates the app under the accessory activation policy (`keyboardShortcut("q", modifiers: .command)` added).
+- **Settings UI refactor**: replaced the stock macOS `TabView` with a custom icon toolbar at the top of the settings window. Six colored tiles (General/Hotkeys/Prompts/Vocabulary/Setup/About), clearer affordance, more native look.
+- **Hotkey migration**: when adding Business at position 2, the existing stored bindings for Plus/Rage/Emoji would have collided with the new Business default (⌘⌥2) and left Emoji unbound. v1.0.1 resets all mode shortcuts to the v1.0.1 defaults exactly once on first launch, guarded by a one-time migration flag. Subsequent user customizations persist normally.
+- **Build hygiene**: `./build-app.sh` now builds into `~/Downloads/blitzbot-build/` via `swift build --scratch-path` instead of leaving `.build/` inside the (possibly sync'd) project directory. Also updates `/Applications/blitzbot.app` in place.
+
+### v1.0.0 (2026-04-14)
+
+Initial public release.
+
+- 5 modes: Normal (offline), Business, Plus, Rage, Emoji with individual hotkeys (default `⌘⌥1-5`)
+- Live mode switch while recording
+- Floating HUD with timer + live waveform + mode badge
+- Custom hotkeys per mode via [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) recorder
+- Editable system prompts per mode
+- Vocabulary list fed to Whisper as context for proper nouns and jargon
+- Auto-updater via GitHub Releases (check from Settings → About)
+- Setup wizard for macOS permissions
+- DE + EN UI
+- Persistent log at `~/.blitzbot/logs/blitzbot.log`
+- MIT license
 
 ---
 

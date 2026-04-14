@@ -98,6 +98,14 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
 
 9. **Vor jedem Push**: `bosch-secrets-scan` Skill laufen lassen. Nie `.env`, `*.log`, `config.json`, Keys ins Repo.
 
+9a. **Vor jedem Push: README auf den aktuellen Stand bringen.** Ohne Ausnahme. Die README ist die Visitenkarte des Repos und MUSS vor jedem `git push` widerspiegeln was im Code steht:
+   - Neue Features → in die passenden Sektionen (Modi-Tabelle, Usage, Settings) einarbeiten
+   - Breaking Changes / UI-Änderungen → unter `## Changelog` als neue Version dokumentieren (mit Datum, knappen Stichpunkten)
+   - Entfernte oder umbenannte Funktionen → raus aus der README
+   - Neue Dateien/Module → in die Datei-Übersicht unter `## Development → Key files`
+   - TOC (`## Table of contents`) synchron halten
+   - Keine "TODO: update README" Commits. Lieber ein Feature verschieben als die Doku verkommen lassen.
+
 10. **UI-Änderungen im echten Build testen** — nicht nur Code lesen. Nach jedem UI-Change: rebuild, deploy, Hotkey drücken, Screenshot/Verhalten prüfen.
 
 11. **Commit-Stil**: Kleine, testbare Commits mit klaren Messages. Kein "wip", kein "fix stuff".
