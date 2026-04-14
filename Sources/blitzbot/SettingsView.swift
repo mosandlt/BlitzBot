@@ -325,14 +325,38 @@ struct SettingsView: View {
 
     private var prompts: some View {
         Form {
+            Section {
+                Text("Leer lassen = Standard-Prompt in der gewählten Ausgabesprache. Eigener Text = erzwungener Override, unabhängig von der erkannten Sprache.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(Mode.allCases) { mode in
                 Section(mode.displayName) {
                     TextEditor(text: Binding(
-                        get: { config.prompts[mode] ?? "" },
-                        set: { config.prompts[mode] = $0; config.save() }
+                        get: { config.customPrompts[mode] ?? "" },
+                        set: {
+                            let trimmed = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if trimmed.isEmpty {
+                                config.customPrompts.removeValue(forKey: mode)
+                            } else {
+                                config.customPrompts[mode] = $0
+                            }
+                            config.save()
+                        }
                     ))
                     .font(.system(.body, design: .monospaced))
                     .frame(minHeight: 80)
+                    if config.customPrompts[mode] == nil {
+                        Text("Standard (\(config.outputLanguage == .en ? "EN" : "DE")): \(config.displayDefaultPrompt(for: mode).prefix(160))…")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                            .lineLimit(3)
+                    } else {
+                        Button("Auf Standard zurücksetzen") {
+                            config.customPrompts.removeValue(forKey: mode)
+                            config.save()
+                        }
+                        .font(.caption)
+                    }
                 }
             }
         }

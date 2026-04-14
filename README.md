@@ -516,6 +516,13 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.0.4 (2026-04-14)
+
+- **English input now actually gets English output**. Regression fix for the language-routing logic introduced in v1.0.2.
+  - Root cause: `AppConfig.init()` used to eagerly populate `prompts[mode]` with the German default (via a back-compat accessor that ignored the language parameter). `prompt(for:language:)` then always took the "custom prompt" branch because the dictionary was non-empty, and the language-aware default on the next line was never reached. The bug was silently re-persisted into UserDefaults on every `save()`.
+  - Fix: split custom user overrides (`customPrompts`) from defaults. A missing key now means "use language-appropriate default". One-time migration in `init()` strips any previously auto-persisted German-default strings so existing installs recover automatically. Real user customizations (differ from the German default) are preserved.
+- Prompts tab in Settings now shows which language's default is active when no override is set, and offers a "Reset to default" button if you did override.
+
 ### v1.0.3 (2026-04-14)
 
 - **Mode 6 repurposed**: was *AI Command* (Claude executes the instruction). Now *Prompt* — Claude turns a loose spoken idea into a clean, tool-agnostic prompt you paste into your AI of choice. Output is the prompt, not the result. Helpful when you know what you want but haven't yet structured it.

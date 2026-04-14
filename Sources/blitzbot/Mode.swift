@@ -47,6 +47,9 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
     /// Back-compat accessor — defaults to German.
     var defaultSystemPrompt: String { defaultSystemPromptGerman }
 
+    /// Used by the v1.0.4 prompt-migration to identify unchanged German defaults.
+    var defaultSystemPromptGermanForMigration: String { defaultSystemPromptGerman }
+
     private var defaultSystemPromptGerman: String {
         switch self {
         case .normal:
