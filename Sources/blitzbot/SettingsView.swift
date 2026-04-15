@@ -9,27 +9,25 @@ private enum PromptMergeMode: Hashable {
 
 struct SettingsView: View {
     @EnvironmentObject var config: AppConfig
-    @State private var apiKeyInput = ""
-    @State private var keyStatus = ""
-    @State private var openaiKeyInput = ""
-    @State private var openaiKeyStatus = ""
-    @State private var ollamaKeyInput = ""
-    @State private var ollamaKeyStatus = ""
-    @State private var ollamaReachable: Bool? = nil
-    @State private var ollamaAvailableModels: [String] = []
-    @State private var ollamaRefreshing = false
-    @State private var ollamaRefreshError: String?
-    @State private var selectedTab: SettingsTab = .general
+    /// Persisted across settings open/close so the user doesn't jump back to Allgemein every time.
+    @AppStorage("settings.selectedTab") private var selectedTabRaw: String = SettingsTab.general.rawValue
 
     @Environment(\.openWindow) private var openWindow
 
+    private var selectedTab: SettingsTab {
+        get { SettingsTab(rawValue: selectedTabRaw) ?? .general }
+    }
+
+    private func selectTab(_ tab: SettingsTab) { selectedTabRaw = tab.rawValue }
+
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general, hotkeys, prompts, vocabulary, setup, about
+        case general, profiles, hotkeys, prompts, vocabulary, setup, about
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .general:    return "Allgemein"
+            case .profiles:   return "Profile"
             case .hotkeys:    return "Hotkeys"
             case .prompts:    return "Prompts"
             case .vocabulary: return "Vokabular"
@@ -41,6 +39,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general:    return "gearshape.fill"
+            case .profiles:   return "person.2.fill"
             case .hotkeys:    return "keyboard.fill"
             case .prompts:    return "text.alignleft"
             case .vocabulary: return "character.book.closed.fill"
@@ -52,6 +51,7 @@ struct SettingsView: View {
         var tint: Color {
             switch self {
             case .general:    return .gray
+            case .profiles:   return .indigo
             case .hotkeys:    return .blue
             case .prompts:    return .purple
             case .vocabulary: return .green
@@ -68,7 +68,7 @@ struct SettingsView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 620, height: 480)
+        .frame(minWidth: 780, minHeight: 580)
         .background(Color(NSColor.windowBackgroundColor))
     }
 
@@ -76,7 +76,7 @@ struct SettingsView: View {
         HStack(spacing: 4) {
             ForEach(SettingsTab.allCases) { tab in
                 TabButton(tab: tab, isSelected: selectedTab == tab) {
-                    selectedTab = tab
+                    selectTab(tab)
                 }
             }
         }
@@ -90,6 +90,7 @@ struct SettingsView: View {
     private var content: some View {
         switch selectedTab {
         case .general:    general
+        case .profiles:   ProfilesView(store: config.profileStore)
         case .hotkeys:    hotkeys
         case .prompts:    prompts
         case .vocabulary: vocabulary
@@ -262,25 +263,28 @@ struct SettingsView: View {
 
     private var general: some View {
         Form {
-            Section("LLM-Provider") {
-                Picker("Anbieter", selection: $config.llmProvider) {
-                    ForEach(LLMProvider.allCases) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
+            Section("LLM") {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle").foregroundStyle(.secondary)
+                    Text("Provider, API-Keys und Modelle werden im Tab **Profile** verwaltet.")
+                        .font(.caption)
                 }
-                .pickerStyle(.segmented)
-                Text("Wähle, wohin Business/Plus/Rage/Emoji/Prompt-Modi geschickt werden. Der Normal-Modus bleibt lokal.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Text("Aktives Profil").frame(width: 110, alignment: .leading)
+                    if let active = config.profileStore.activeProfile {
+                        Text(active.name).fontWeight(.medium)
+                        Text("· \(active.provider.displayName)")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Keines — Legacy-Fallback aktiv")
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer()
+                    Button("Profile öffnen") { selectTab(.profiles) }
+                        .controlSize(.small)
+                }
             }
 
-            Group {
-                switch config.llmProvider {
-                case .anthropic: anthropicSettings
-                case .openai:    openaiSettings
-                case .ollama:    ollamaSettings
-                }
-            }
             Section("Ausgabesprache / Output Language") {                Picker("Sprache", selection: $config.outputLanguage) {
                     Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
                     Text("Deutsch").tag(OutputLanguage.de)
@@ -338,171 +342,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    @ViewBuilder
-    private var anthropicSettings: some View {
-        Section("Anthropic API Key") {
-            HStack {
-                SecureField("sk-ant-…", text: $apiKeyInput)
-                Button("Speichern") { saveKey() }.disabled(apiKeyInput.isEmpty)
-                Button("Löschen") { deleteKey() }.disabled(!config.hasAPIKey)
-            }
-            HStack {
-                Image(systemName: config.hasAPIKey ? "checkmark.circle.fill" : "xmark.circle")
-                    .foregroundStyle(config.hasAPIKey ? .green : .orange)
-                Text(config.hasAPIKey ? "Key in Keychain gespeichert" : "Kein Key gesetzt")
-                    .font(.caption)
-                if !keyStatus.isEmpty {
-                    Text(keyStatus).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-        Section("Claude-Modell") {
-            Picker("Modell", selection: $config.model) {
-                Text("Sonnet 4.5 (schnell, günstig)").tag("claude-sonnet-4-5")
-                Text("Opus 4.5 (höchste Qualität)").tag("claude-opus-4-5")
-                Text("Haiku 4.5 (sehr schnell)").tag("claude-haiku-4-5")
-            }
-            .onChange(of: config.model) { _ in config.save() }
-        }
-    }
-
-    @ViewBuilder
-    private var openaiSettings: some View {
-        Section("OpenAI API Key") {
-            HStack {
-                SecureField("sk-…", text: $openaiKeyInput)
-                Button("Speichern") { saveOpenAIKey() }.disabled(openaiKeyInput.isEmpty)
-                Button("Löschen") { deleteOpenAIKey() }.disabled(!config.hasOpenAIKey)
-            }
-            HStack {
-                Image(systemName: config.hasOpenAIKey ? "checkmark.circle.fill" : "xmark.circle")
-                    .foregroundStyle(config.hasOpenAIKey ? .green : .orange)
-                Text(config.hasOpenAIKey ? "Key in Keychain gespeichert" : "Kein Key gesetzt")
-                    .font(.caption)
-                if !openaiKeyStatus.isEmpty {
-                    Text(openaiKeyStatus).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-        Section("OpenAI-Modell") {
-            Picker("Modell", selection: $config.openaiModel) {
-                Text("gpt-4o-mini (schnell, günstig)").tag("gpt-4o-mini")
-                Text("gpt-4o (höchste Qualität)").tag("gpt-4o")
-            }
-            HStack {
-                Text("oder frei").frame(width: 60, alignment: .leading)
-                TextField("z.B. gpt-4o-2024-11-20", text: $config.openaiModel)
-                    .textFieldStyle(.roundedBorder)
-            }
-            Text("Standardmäßig gpt-4o-mini. Für komplexere Umformulierungen gpt-4o.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private var ollamaSettings: some View {
-        Section("Ollama-Server") {
-            HStack {
-                Text("URL").frame(width: 60, alignment: .leading)
-                TextField("http://localhost:11434", text: $config.ollamaBaseURL)
-                Button {
-                    Task { await refreshOllama() }
-                } label: {
-                    if ollamaRefreshing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                }
-                .disabled(ollamaRefreshing)
-            }
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(ollamaStatusColor)
-                    .frame(width: 8, height: 8)
-                Text(ollamaStatusText).font(.caption).foregroundStyle(.secondary)
-                if let err = ollamaRefreshError, !err.isEmpty {
-                    Text("— \(err)").font(.caption).foregroundStyle(.red)
-                }
-            }
-        }
-        Section("Ollama-Modell") {
-            if ollamaAvailableModels.isEmpty {
-                HStack {
-                    TextField("llama3.2:latest", text: $config.ollamaModel)
-                }
-                Text("Keine Modelle gefunden. Erst „Aktualisieren“ drücken oder manuell eingeben (z.B. `llama3.2:latest`, `mistral:latest`).")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Picker("Modell", selection: $config.ollamaModel) {
-                    ForEach(ollamaAvailableModels, id: \.self) { name in
-                        Text(name).tag(name)
-                    }
-                    if !ollamaAvailableModels.contains(config.ollamaModel) {
-                        Text("\(config.ollamaModel) (nicht installiert)").tag(config.ollamaModel)
-                    }
-                }
-            }
-        }
-        Section("Ollama API Key (optional)") {
-            HStack {
-                SecureField("nur bei Authentifizierung", text: $ollamaKeyInput)
-                Button("Speichern") { saveOllamaKey() }.disabled(ollamaKeyInput.isEmpty)
-                Button("Löschen") { deleteOllamaKey() }.disabled(!config.hasOllamaKey)
-            }
-            HStack {
-                Image(systemName: config.hasOllamaKey ? "checkmark.circle.fill" : "minus.circle")
-                    .foregroundStyle(config.hasOllamaKey ? .green : .secondary)
-                Text(config.hasOllamaKey ? "Key in Keychain gespeichert" : "Kein Key nötig für lokales Ollama")
-                    .font(.caption)
-                if !ollamaKeyStatus.isEmpty {
-                    Text(ollamaKeyStatus).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var ollamaStatusColor: Color {
-        switch ollamaReachable {
-        case .some(true):  return .green
-        case .some(false): return .red
-        case .none:        return .secondary
-        }
-    }
-
-    private var ollamaStatusText: String {
-        switch ollamaReachable {
-        case .some(true):  return "Ollama erreichbar (\(ollamaAvailableModels.count) Modelle)"
-        case .some(false): return "Ollama nicht erreichbar"
-        case .none:        return "Status unbekannt — „Aktualisieren“ drücken"
-        }
-    }
-
-    private func refreshOllama() async {
-        ollamaRefreshing = true
-        ollamaRefreshError = nil
-        let client = OllamaClient(baseURL: config.ollamaBaseURL,
-                                  model: config.ollamaModel,
-                                  apiKey: KeychainStore.loadOllamaKey())
-        let reachable = await client.healthCheck()
-        ollamaReachable = reachable
-        if reachable {
-            do {
-                let models = try await client.listModels()
-                ollamaAvailableModels = models
-                Log.write("Ollama: \(models.count) Modelle gefunden")
-            } catch {
-                ollamaAvailableModels = []
-                ollamaRefreshError = error.localizedDescription
-                Log.write("Ollama listModels failed: \(error.localizedDescription)")
-            }
-        } else {
-            ollamaAvailableModels = []
-        }
-        ollamaRefreshing = false
     }
 
     private var hotkeys: some View {
@@ -618,50 +457,6 @@ struct SettingsView: View {
         return ("Override", .orange)
     }
 
-    private func saveKey() {
-        do {
-            try config.setAPIKey(apiKeyInput)
-            apiKeyInput = ""
-            keyStatus = "Gespeichert."
-        } catch {
-            keyStatus = "Fehler: \(error.localizedDescription)"
-        }
-    }
-
-    private func deleteKey() {
-        config.removeAPIKey()
-        keyStatus = "Gelöscht."
-    }
-
-    private func saveOpenAIKey() {
-        do {
-            try config.setOpenAIKey(openaiKeyInput)
-            openaiKeyInput = ""
-            openaiKeyStatus = "Gespeichert."
-        } catch {
-            openaiKeyStatus = "Fehler: \(error.localizedDescription)"
-        }
-    }
-
-    private func deleteOpenAIKey() {
-        config.removeOpenAIKey()
-        openaiKeyStatus = "Gelöscht."
-    }
-
-    private func saveOllamaKey() {
-        do {
-            try config.setOllamaKey(ollamaKeyInput)
-            ollamaKeyInput = ""
-            ollamaKeyStatus = "Gespeichert."
-        } catch {
-            ollamaKeyStatus = "Fehler: \(error.localizedDescription)"
-        }
-    }
-
-    private func deleteOllamaKey() {
-        config.removeOllamaKey()
-        ollamaKeyStatus = "Gelöscht."
-    }
 }
 
 private struct TabButton: View {

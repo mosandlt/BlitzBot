@@ -16,14 +16,15 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 - **Speech-to-text**: [whisper.cpp](https://github.com/ggerganov/whisper.cpp) running locally. Offline. Private. No audio leaves your machine.
 - **Text polishing** (optional, per mode): [Anthropic Claude API](https://www.anthropic.com). Only the transcribed text is sent, never the audio.
-- **One API key to set up**: Anthropic. That's it.
+- **One API key to set up**: or more, via **Connection Profiles** — each profile holds a provider, base URL, auth scheme, and key. Switch profiles with one click.
 - **Open source**: MIT license.
 
 ---
 
 ## Table of contents
 
-- [The five modes](#the-five-modes)
+- [The six modes](#the-six-modes)
+- [Connection profiles](#connection-profiles)
 - [Installation](#installation)
 - [First launch on macOS (Gatekeeper workaround)](#first-launch-on-macos-gatekeeper-workaround)
 - [Usage](#usage)
@@ -41,7 +42,7 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 ---
 
-## The five modes
+## The six modes
 
 | # | Mode          | Default hotkey | Tagline                                 | Behavior |
 |---|---------------|----------------|------------------------------------------|----------|
@@ -73,6 +74,39 @@ Or click directly: the HUD has five **mode pills** at the bottom. Click any pill
 - **Hotkeys**: Settings → Hotkeys → click the recorder next to each mode, press your desired combo.
 - **Prompts**: Settings → Prompts → edit the Claude system prompt per mode. Make Business more formal, Rage softer, Emoji denser.
 - **Vocabulary**: Settings → Vocabulary → add proper nouns and jargon. They're fed to Whisper as context so it spells *Anthropic*, *Kubernetes*, your colleagues' names, etc. correctly instead of phonetic nonsense.
+
+---
+
+## Connection profiles
+
+blitzbot can talk to **any OpenAI-compatible or Anthropic-compatible LLM endpoint** — not just the default Anthropic API. You configure endpoints as *profiles*, pick one as active, and all LLM calls flow through it.
+
+### What a profile contains
+
+| Field | Description |
+|-------|-------------|
+| **Name** | Display name (e.g. "Direct Anthropic", "Work proxy") |
+| **Provider** | `Anthropic` / `OpenAI` / `Ollama` — controls the request format |
+| **Base URL** | Endpoint root (e.g. `https://api.anthropic.com`, `http://localhost:11434`) |
+| **Auth scheme** | `x-api-key` header / `Bearer` token / none |
+| **Active model** | Which model to use (picked from a live list or typed manually) |
+| **API key / token** | Stored in the macOS Keychain — never in files |
+
+### Managing profiles
+
+Open **Settings → Profile**:
+
+- **Quick-switcher chips** at the top — click any chip to activate that profile immediately
+- **New profile** button — opens an inline editor
+- **Scan this Mac** — automatically discovers configs in `~/.claude-profiles/`, `~/.claude/settings.json`, and `~/.config/claude/` and offers to import them as profiles (reads `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`)
+- **Import / Export** — JSON format (export never includes secrets)
+- **Model discovery** — inside the profile editor, click *Abrufen* to fetch the live model list from the endpoint. Click any model row to set it as the active model.
+
+### Keychain and passwords
+
+API keys and tokens are stored in the macOS **Data Protection keychain** (same partition iOS uses). This keychain does not use per-app ACLs, so macOS will **never ask for your login password** to grant blitzbot access. The first time you add a key you may see one confirmation click — after that it's silent.
+
+> **Upgrading from v1.0.x**: on the first launch after upgrading, blitzbot migrates existing keychain items from the legacy login keychain to the Data Protection keychain. This triggers a one-time "Allow / Always Allow" click per item. Click **Always Allow** and you'll never see it again.
 
 ---
 
@@ -156,13 +190,16 @@ On first launch blitzbot opens a **Setup window** that walks you through four ch
 
 Green checkmarks everywhere? Click *Continue*. Something red? Click the button next to it to open the relevant macOS Settings pane. If you close the window prematurely, reopen it via **Settings → Setup**.
 
-### Anthropic API key
+### API key / connection profile
 
-Only needed for Business / Plus / Rage / Emoji.
+Only needed for Business / Plus / Rage / Emoji / Prompt.
 
-1. Get one at https://console.anthropic.com/settings/keys
-2. In blitzbot: menu bar ⚡ icon → ⚙ (gear) → **General** → paste key into *Anthropic API Key* → Save
+**Quick setup (direct Anthropic):**
+1. Get a key at https://console.anthropic.com/settings/keys
+2. In blitzbot: menu bar ⚡ → ⚙ (gear) → **Profile** → *New profile* → paste key → Save
 3. Key is stored in the macOS Keychain. Never in files, never in git.
+
+**Custom endpoint or proxy:** use the Profile tab to set a different base URL and auth scheme. The scanner (*Auf diesem Mac suchen*) can auto-import settings from Claude Code config files.
 
 Normal mode runs entirely offline — no key, no cloud calls, nothing.
 
@@ -214,16 +251,17 @@ Click the icon to open the popover with the full mode list, status, and access t
 
 ## Settings
 
-Six tabs under **⚙ Settings**:
+Seven tabs under **⚙ Settings**:
 
-| Tab        | What's inside |
-|------------|---------------|
-| **General**    | **LLM provider picker** (Anthropic / OpenAI / Ollama) with per-provider fields: Anthropic (API key + Sonnet/Opus/Haiku), OpenAI (API key + `gpt-4o-mini`/`gpt-4o` + free-text), Ollama (base URL + dynamic model list with health indicator + optional key). Plus: output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path. |
-| **Hotkeys**    | One recorder field per mode. Click, press keys. Defaults shown. Any conflicts are handled by the OS (you'll see it if a combo is reserved). |
-| **Prompts**    | Editable system prompt per mode. Leave empty = language-aware default. Add text to either *replace* the default or *append* to it (toggle per mode). |
-| **Vocabulary** | Proper nouns, product names, jargon, colleagues. Passed to Whisper as `--prompt`. Improves spelling accuracy dramatically. |
-| **Setup**      | Opens the onboarding wizard again. Use when permissions got reset (common after rebuilds). |
-| **About**      | Version, update check, GitHub link, license. Click *Check now* to see if a new release is available. |
+| Tab         | What's inside |
+|-------------|---------------|
+| **General**     | Output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path. Active profile name shown with a quick link to the Profile tab. |
+| **Profile**     | Connection profiles — add, edit, delete, import/export, scan for local configs. Quick-switcher chips. Model list per profile. See [Connection profiles](#connection-profiles). |
+| **Hotkeys**     | One recorder field per mode. Click, press keys. Defaults shown. |
+| **Prompts**     | Editable system prompt per mode. Leave empty = language-aware default. Add text to either *replace* or *append* to the default (toggle per mode). |
+| **Vocabulary**  | Proper nouns, product names, jargon, colleagues. Passed to Whisper as `--prompt`. Improves spelling accuracy dramatically. |
+| **Setup**       | Opens the onboarding wizard again. Use when permissions got reset (common after rebuilds). |
+| **About**       | Version, update check, GitHub link, license. |
 
 ---
 
@@ -397,20 +435,29 @@ Sources/blitzbot/
   blitzbotApp.swift         @main + AppDelegate + MenuBarExtra + Windows
   AppConfig.swift           UserDefaults, Keychain wrapper, vocabulary, per-mode prompts
   AppInfo.swift             Version constants and repo URL
-  Mode.swift                enum (Normal, Business, Plus, Rage, Emoji) + display names + default prompts
+  Mode.swift                enum (Normal…Prompt) + display names + default prompts
   HotkeyManager.swift       KeyboardShortcuts integration per mode
   ModeProcessor.swift       state machine: toggle → record → transcribe → formulate → paste
-  AudioRecorder.swift       AVAudioEngine setup + rolling PCM sample buffer for real waveform + RMS level publishing
+  AudioRecorder.swift       AVAudioEngine setup + rolling PCM sample buffer + RMS level publishing
   WhisperTranscriber.swift  subprocess wrapper around whisper-cli
-  AnthropicClient.swift     Claude API request/response
+  LLMRouter.swift           routes LLM calls through the active profile or legacy fallback
+  AnthropicClient.swift     Claude API request/response (supports custom base URL + auth schemes)
+  OpenAIClient.swift        OpenAI-compatible API client
   Paster.swift              NSPasteboard + CGEvent Cmd+V simulation
-  KeychainStore.swift       API key read/write/delete in Keychain
+  KeychainStore.swift       API key read/write/delete — Data Protection keychain, no ACL prompts
+  KeychainPreWarmer.swift   migrates legacy keychain items at launch → silent future reads
+  ConnectionProfile.swift   profile model (provider, baseURL, authScheme, model, Keychain slot)
+  ProfileStore.swift        @ObservedObject store — CRUD, UserDefaults persistence, Keychain I/O
+  ProfileScanner.swift      scans ~/.claude-profiles/, ~/.claude/settings.json for importable configs
+  ModelDiscovery.swift      fetches live model list from Anthropic /v1/models, OpenAI, Ollama
   Log.swift                 simple append-only log at ~/.blitzbot/logs/blitzbot.log
   Permissions.swift         TCC status checker for mic/accessibility/whisper
   PermissionsView.swift     onboarding wizard UI
   MenuBarView.swift         popover content (header, mode list, footer)
-  SettingsView.swift        TabView (General / Hotkeys / Prompts / Vocabulary / Setup / About)
+  SettingsView.swift        TabView (General / Profile / Hotkeys / Prompts / Vocabulary / Setup / About)
+  ProfilesView.swift        Profile tab UI — list, editor, scanner, quick-switcher
   RecordingHUD.swift        NSPanel + SwiftUI content for the floating recording HUD
+  SelectionRewriter.swift   ⌘⌥0 hotkey — reads AX selection, rewrites via LLM, pastes back
   Updater.swift             GitHub Releases API check + download + install
 ```
 
@@ -561,11 +608,9 @@ If you want to take this on: fork or open an issue, propose the spike, and we'll
 
 ## Roadmap
 
-- [ ] Stable-cert code signing in the release build (no more permission resets for end users)
-- [ ] Apple notarization
+- [ ] Apple notarization (removes first-launch Gatekeeper workaround for end users)
 - [ ] Universal binary (arm64 + x86_64)
 - [ ] Push-to-talk mode
-- [ ] Optional local-only LLM for polishing (Ollama integration) for full offline end-to-end
 - [ ] Streaming transcription with interim text in the HUD
 - [ ] Multi-mic selection in settings
 - [ ] Custom "Translate" mode
@@ -575,6 +620,16 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.1.0 (2026-04-15)
+
+- **Connection profiles** — replace the single-provider setup with a full profile system. Each profile holds a provider (Anthropic / OpenAI / Ollama), a base URL, an auth scheme (`x-api-key` / `Bearer` / none), and a model. Any number of profiles, quick-switch with one click.
+- **New Settings tab: Profile** — list, inline editor, JSON import/export, quick-switcher chips, per-profile model discovery (live list from the endpoint).
+- **Profile scanner** — *Auf diesem Mac suchen* reads `~/.claude-profiles/*.json`, `~/.claude/settings.json`, and `~/.config/claude/*.json` and offers to import them automatically.
+- **LLMRouter** — central routing layer that sends every LLM call through the active profile (or falls back to legacy settings for existing installs).
+- **Keychain — no more password prompts**: all new keychain items go into the macOS Data Protection keychain, which does not use per-app ACLs. macOS will never ask for your login password to grant blitzbot access. On the first launch after upgrading, existing items migrate automatically (one-time "Always Allow" click per item).
+- **Settings window is now resizable** — drag to any size; minimum is 780 × 580 px.
+- General tab simplified — provider picker and per-provider key fields moved to the new Profile tab.
 
 ### v1.0.10 (2026-04-15)
 

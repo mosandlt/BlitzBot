@@ -68,6 +68,10 @@ final class AppConfig: ObservableObject {
     @Published var hasOpenAIKey: Bool
     @Published var hasOllamaKey: Bool
 
+    /// Connection profiles. When an active profile is set, it takes precedence over
+    /// `llmProvider` / per-provider keys; otherwise the legacy path is used.
+    let profileStore: ProfileStore
+
     // Context-menu (macOS Services) settings
     @Published var serviceDefaultMode: Mode {
         didSet { defaults.set(serviceDefaultMode.rawValue, forKey: "serviceDefaultMode") }
@@ -142,6 +146,7 @@ final class AppConfig: ObservableObject {
         self.ollamaModel = defaults.string(forKey: "ollamaModel") ?? "llama3.2:latest"
         self.hasOpenAIKey = KeychainStore.loadOpenAIKey()?.isEmpty == false
         self.hasOllamaKey = KeychainStore.loadOllamaKey()?.isEmpty == false
+        self.profileStore = ProfileStore()
 
         // Context-menu (macOS Services)
         if let raw = defaults.string(forKey: "serviceDefaultMode"),
