@@ -68,6 +68,14 @@ final class AppConfig: ObservableObject {
     @Published var hasOpenAIKey: Bool
     @Published var hasOllamaKey: Bool
 
+    // Context-menu (macOS Services) settings
+    @Published var serviceDefaultMode: Mode {
+        didSet { defaults.set(serviceDefaultMode.rawValue, forKey: "serviceDefaultMode") }
+    }
+    @Published var serviceClipboardFallback: Bool {
+        didSet { defaults.set(serviceClipboardFallback, forKey: "serviceClipboardFallback") }
+    }
+
     private let defaults = UserDefaults.standard
     private static let promptMigrationKey = "promptMigration.v1_0_4.customOnly"
 
@@ -134,6 +142,18 @@ final class AppConfig: ObservableObject {
         self.ollamaModel = defaults.string(forKey: "ollamaModel") ?? "llama3.2:latest"
         self.hasOpenAIKey = KeychainStore.loadOpenAIKey()?.isEmpty == false
         self.hasOllamaKey = KeychainStore.loadOllamaKey()?.isEmpty == false
+
+        // Context-menu (macOS Services)
+        if let raw = defaults.string(forKey: "serviceDefaultMode"),
+           let mode = Mode(rawValue: raw), mode != .normal {
+            self.serviceDefaultMode = mode
+        } else {
+            self.serviceDefaultMode = .business
+        }
+        let storedFallback = defaults.object(forKey: "serviceClipboardFallback")
+        self.serviceClipboardFallback = storedFallback != nil
+            ? defaults.bool(forKey: "serviceClipboardFallback")
+            : true
     }
 
     var vocabularyPrompt: String {

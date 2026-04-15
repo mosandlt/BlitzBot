@@ -292,6 +292,31 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Section("Kontextmenü (Rechtsklick → Dienste)") {
+                Picker("Default-Modus", selection: $config.serviceDefaultMode) {
+                    ForEach(Mode.allCases.filter { $0 != .normal }) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                Toggle("Bei Fehler Originaltext in Zwischenablage behalten",
+                       isOn: $config.serviceClipboardFallback)
+                Text("Text in beliebiger App markieren → Rechtsklick → Dienste → »blitzbot: …«. Ersetzt die Markierung mit dem umgeschriebenen Text. Der Default-Eintrag nutzt den hier gewählten Modus.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Dienste-Einstellungen öffnen") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.keyboard?Services") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    Button("Dienste-Menü neu laden") {
+                        NSUpdateDynamicServices()
+                    }
+                }
+                Text("Wenn die blitzbot-Einträge nicht erscheinen: App einmal in /Applications verschoben haben, dann »Dienste-Menü neu laden« klicken oder System abmelden/anmelden.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section("Auto-Stop bei Inaktivität") {
                 Toggle("Automatisch stoppen wenn keine Sprache erkannt wird", isOn: $config.autoStopEnabled)
                     .onChange(of: config.autoStopEnabled) { _ in config.save() }

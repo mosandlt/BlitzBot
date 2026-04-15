@@ -7,6 +7,7 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
     let permissions: PermissionsChecker
     let hotkeys = HotkeyManager()
     var hud: RecordingHUDController?
+    var serviceProvider: ServiceProvider?
 
     var openWindow: ((String) -> Void)?
 
@@ -37,6 +38,11 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             MainActor.assumeIsolated {
                 self.hud = RecordingHUDController(processor: self.processor, config: self.config)
+                let provider = ServiceProvider(config: self.config, processor: self.processor)
+                self.serviceProvider = provider
+                NSApp.servicesProvider = provider
+                NSUpdateDynamicServices()
+                Log.write("Services provider registered")
             }
         }
 
