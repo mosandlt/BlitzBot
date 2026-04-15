@@ -254,27 +254,7 @@ final class ModeProcessor: ObservableObject {
             let prompt = config.prompt(for: mode, language: resolvedLanguage)
             if !prompt.isEmpty {
                 status = .formuliert
-                switch config.llmProvider {
-                case .anthropic:
-                    guard let apiKey = KeychainStore.loadAPIKey(), !apiKey.isEmpty else {
-                        status = .fehler("Kein Anthropic API Key")
-                        return
-                    }
-                    let client = AnthropicClient(apiKey: apiKey, model: config.model)
-                    output = try await client.rewrite(text: raw, systemPrompt: prompt)
-                case .openai:
-                    guard let apiKey = KeychainStore.loadOpenAIKey(), !apiKey.isEmpty else {
-                        status = .fehler("Kein OpenAI API Key")
-                        return
-                    }
-                    let client = OpenAIClient(apiKey: apiKey, model: config.openaiModel)
-                    output = try await client.rewrite(text: raw, systemPrompt: prompt)
-                case .ollama:
-                    let client = OllamaClient(baseURL: config.ollamaBaseURL,
-                                              model: config.ollamaModel,
-                                              apiKey: KeychainStore.loadOllamaKey())
-                    output = try await client.rewrite(text: raw, systemPrompt: prompt)
-                }
+                output = try await LLMRouter.rewrite(text: raw, systemPrompt: prompt, config: config)
             }
             let outputTrimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !outputTrimmed.isEmpty else {

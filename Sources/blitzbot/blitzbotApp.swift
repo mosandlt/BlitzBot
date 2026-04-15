@@ -34,6 +34,10 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.register()
         // Log-Meldung kommt jetzt aus HotkeyManager.installEventTap()
 
+        // Trigger any pending Keychain ACL prompts up-front instead of mid-recording.
+        // User clicks "Always Allow" once per item and then it stays silent.
+        KeychainPreWarmer.prewarm(profileStore: config.profileStore)
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             MainActor.assumeIsolated {
@@ -81,7 +85,7 @@ struct BlitzbotApp: App {
         Window("blitzbot Einstellungen", id: "settings") {
             SettingsView().environmentObject(delegate.config)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
 
         Window("blitzbot Setup", id: "setup") {
             PermissionsView()

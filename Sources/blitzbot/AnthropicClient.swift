@@ -3,20 +3,46 @@ import Foundation
 struct AnthropicClient {
     let apiKey: String
     let model: String
+    let baseURL: String
+    let authScheme: AuthScheme
+    let sendAnthropicVersion: Bool
 
-    init(apiKey: String, model: String = "claude-sonnet-4-5") {
+    init(apiKey: String,
+         model: String = "claude-sonnet-4-5",
+         baseURL: String = "https://api.anthropic.com",
+         authScheme: AuthScheme = .apiKey,
+         sendAnthropicVersion: Bool = true) {
         self.apiKey = apiKey
         self.model = model
+        self.baseURL = Self.normalize(baseURL)
+        self.authScheme = authScheme
+        self.sendAnthropicVersion = sendAnthropicVersion
+    }
+
+    private static func normalize(_ url: String) -> String {
+        var s = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        return s
     }
 
     func rewrite(text: String, systemPrompt: String) async throws -> String {
         guard !systemPrompt.isEmpty else { return text }
 
-        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        guard let url = URL(string: "\(baseURL)/v1/messages") else {
+            throw NSError(domain: "Anthropic", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "Ungültige URL"])
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        switch authScheme {
+        case .apiKey: request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        case .bearer: request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .none:   break
+        }
+        if sendAnthropicVersion {
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        }
         request.timeoutInterval = 120
 
         let body: [String: Any] = [
@@ -31,7 +57,6 @@ struct AnthropicClient {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let http = response as? HTTPURLResponse
             let statusCode = http?.statusCode ?? 0
-            // Parse error type without exposing raw API response to user/logs
             struct APIErrorWrapper: Decodable {
                 struct APIError: Decodable { let type: String? }
                 let error: APIError?

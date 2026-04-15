@@ -167,30 +167,7 @@ final class SelectionRewriter {
     private func callLLM(text: String,
                          systemPrompt: String,
                          config: AppConfig) async throws -> String {
-        switch config.llmProvider {
-        case .anthropic:
-            guard let apiKey = KeychainStore.loadAPIKey(), !apiKey.isEmpty else {
-                throw makeError("Kein Anthropic API Key")
-            }
-            let client = AnthropicClient(apiKey: apiKey, model: config.model)
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
-        case .openai:
-            guard let apiKey = KeychainStore.loadOpenAIKey(), !apiKey.isEmpty else {
-                throw makeError("Kein OpenAI API Key")
-            }
-            let client = OpenAIClient(apiKey: apiKey, model: config.openaiModel)
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
-        case .ollama:
-            let client = OllamaClient(baseURL: config.ollamaBaseURL,
-                                      model: config.ollamaModel,
-                                      apiKey: KeychainStore.loadOllamaKey())
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
-        }
-    }
-
-    private func makeError(_ message: String) -> NSError {
-        NSError(domain: "blitzbot.rewrite", code: 0,
-                userInfo: [NSLocalizedDescriptionKey: message])
+        try await LLMRouter.rewrite(text: text, systemPrompt: systemPrompt, config: config)
     }
 
     private func detectLanguage(of text: String) -> String {
