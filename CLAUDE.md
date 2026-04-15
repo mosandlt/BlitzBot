@@ -302,10 +302,10 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.0.10 (Stand: 2026-04-15)
+- **Aktuelle Version**: v1.1.0 (Stand: 2026-04-15)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
-- **Dev-Signing**: `blitzbot-dev` Cert (self-signed, in Login-Keychain, Codesigning-Trust gesetzt). Mit diesem Cert signierte Rebuilds überleben TCC + Keychain-ACL.
+- **Keychain**: Open-Access-ACL (`SecAccessCreate` mit leerem trustedApps-Array). Kein Prompt, kein PW, kein "Immer erlauben" — weder beim ersten Start noch nach Rebuilds. Einmalige Migration beim ersten Launch via `KeychainPreWarmer` (UserDefaults-Flag `keychain.openACL.migrated.v2`).
 - **Bundle-ID**: `de.blitzbot.app`
 - **Keychain-Service**: `de.blitzbot.mac` / Accounts `anthropic-api-key`, `openai-api-key`, `ollama-api-key`
 - **LLM-Provider**: Anthropic (default), OpenAI, Ollama — umschaltbar in Settings → Allgemein
@@ -317,6 +317,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 | Version | Kernänderung |
 |---|---|
+| v1.1.0 | Connection Profiles, Model-Picker, resizable Settings, Keychain open-access ACL (kein Prompt mehr) |
 | v1.0.10 | Services rausgenommen (Gatekeeper blockt self-signed Apps) + neuer Hotkey `⌘⌥0`: liest Selection via AX/⌘C, schreibt im Default-Modus um. |
 | v1.0.9 | macOS Services: Rechtsklick → Dienste → blitzbot: Mode — **in v1.0.10 entfernt wegen Gatekeeper-Inkompatibilität mit non-notarized Apps.** |
 | v1.0.8 | Wellenform-Amplitude deutlich erhöht (4.5× Gain, geclampt auf ±1) |

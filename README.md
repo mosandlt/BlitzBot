@@ -104,9 +104,9 @@ Open **Settings → Profile**:
 
 ### Keychain and passwords
 
-API keys and tokens are stored in the macOS **Data Protection keychain** (same partition iOS uses). This keychain does not use per-app ACLs, so macOS will **never ask for your login password** to grant blitzbot access. The first time you add a key you may see one confirmation click — after that it's silent.
+API keys and tokens are stored in the macOS login keychain with an **open-access ACL** — meaning any application on your Mac can read the item without a per-app confirmation dialog. macOS will **never ask for your login password** to grant blitzbot access, not even after rebuilds or updates.
 
-> **Upgrading from v1.0.x**: on the first launch after upgrading, blitzbot migrates existing keychain items from the legacy login keychain to the Data Protection keychain. This triggers a one-time "Allow / Always Allow" click per item. Click **Always Allow** and you'll never see it again.
+> **Upgrading from v1.0.x / v1.1.0**: on the first launch blitzbot rewrites existing keychain items with the open-access ACL (one-time, silent). After that, no prompts ever.
 
 ---
 
@@ -444,8 +444,8 @@ Sources/blitzbot/
   AnthropicClient.swift     Claude API request/response (supports custom base URL + auth schemes)
   OpenAIClient.swift        OpenAI-compatible API client
   Paster.swift              NSPasteboard + CGEvent Cmd+V simulation
-  KeychainStore.swift       API key read/write/delete — Data Protection keychain, no ACL prompts
-  KeychainPreWarmer.swift   migrates legacy keychain items at launch → silent future reads
+  KeychainStore.swift       API key read/write/delete — open-access ACL, no prompts ever
+  KeychainPreWarmer.swift   one-time ACL migration at first launch → silent forever after
   ConnectionProfile.swift   profile model (provider, baseURL, authScheme, model, Keychain slot)
   ProfileStore.swift        @ObservedObject store — CRUD, UserDefaults persistence, Keychain I/O
   ProfileScanner.swift      scans ~/.claude-profiles/, ~/.claude/settings.json for importable configs
@@ -627,7 +627,7 @@ Got other ideas? Open an issue.
 - **New Settings tab: Profile** — list, inline editor, JSON import/export, quick-switcher chips, per-profile model discovery (live list from the endpoint).
 - **Profile scanner** — *Auf diesem Mac suchen* reads `~/.claude-profiles/*.json`, `~/.claude/settings.json`, and `~/.config/claude/*.json` and offers to import them automatically.
 - **LLMRouter** — central routing layer that sends every LLM call through the active profile (or falls back to legacy settings for existing installs).
-- **Keychain — no more password prompts**: all new keychain items go into the macOS Data Protection keychain, which does not use per-app ACLs. macOS will never ask for your login password to grant blitzbot access. On the first launch after upgrading, existing items migrate automatically (one-time "Always Allow" click per item).
+- **Keychain — truly silent**: all keychain items use an open-access ACL (`SecAccessCreate` with empty trusted-apps list). macOS never prompts for a password or "Allow / Always Allow" confirmation — not on first launch, not after rebuilds, not ever. A one-time migration at first launch rewrites any legacy items; subsequent launches skip it entirely.
 - **Settings window is now resizable** — drag to any size; minimum is 780 × 580 px.
 - General tab simplified — provider picker and per-provider key fields moved to the new Profile tab.
 
