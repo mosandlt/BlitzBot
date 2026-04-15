@@ -9,132 +9,90 @@ enum KeychainStore {
 
     // MARK: - Anthropic (default / legacy API)
 
-    static func saveAPIKey(_ key: String) throws {
-        try saveKey(key, account: account)
-    }
-
-    static func loadAPIKey() -> String? {
-        loadKey(account: account)
-    }
-
-    static func deleteAPIKey() {
-        deleteKey(account: account)
-    }
+    static func saveAPIKey(_ key: String) throws { try saveKey(key, account: account) }
+    static func loadAPIKey() -> String? { loadKey(account: account) }
+    static func deleteAPIKey() { deleteKey(account: account) }
 
     // MARK: - Generic per-account helpers
 
-    /// Saves a secret. New items always go into the Data Protection keychain
-    /// (kSecUseDataProtectionKeychain = true) which does **not** use per-app ACLs —
-    /// so macOS never shows the "Allow / Always Allow" password dialog for them.
-    ///
-    /// Update path: tries the Data Protection keychain first, then the legacy login
-    /// keychain (for items created before this version). Updating in place preserves
-    /// whatever ACL the existing item has, avoiding the prompt for items that were
-    /// already "Always Allowed".
+    /// Saves a secret. New items are created with an open-access ACL so macOS never
+    /// shows a password confirmation dialog, regardless of the app's CDHash.
+    /// Updates preserve the existing ACL (which may already be "Always Allow").
     static func saveKey(_ key: String, account: String) throws {
         let data = Data(key.utf8)
-
-        // ── 1. Try update in Data Protection keychain (ideal path)
-        let dpQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: true
-        ]
-        let updateAttrs: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
-        if SecItemUpdate(dpQuery as CFDictionary, updateAttrs as CFDictionary) == errSecSuccess {
-            return
-        }
-
-        // ── 2. Try update in legacy login keychain (items from older versions)
-        let legacyQuery: [String: Any] = [
+        let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        if SecItemUpdate(legacyQuery as CFDictionary, updateAttrs as CFDictionary) == errSecSuccess {
+
+        // Try update first — preserves existing ACL, no dialog regardless of CDHash changes.
+        let updateAttrs: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        if SecItemUpdate(lookup as CFDictionary, updateAttrs as CFDictionary) == errSecSuccess {
             return
         }
 
-        // ── 3. Item doesn't exist yet — create in Data Protection keychain (no ACL prompt ever)
-        var addAttrs = dpQuery
+        // New item — create with open-access ACL: empty trustedApps array means
+        // any application can read this item without a confirmation dialog.
+        var addAttrs = lookup
         addAttrs[kSecValueData as String] = data
         addAttrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        if let access = makeOpenAccess() {
+            addAttrs[kSecAttrAccess as String] = access
+        }
         let status = SecItemAdd(addAttrs as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw NSError(domain: "Keychain", code: Int(status))
         }
     }
 
-    /// Reads a secret. Checks the Data Protection keychain first, then falls back
-    /// to the legacy login keychain so older items still work during migration.
     static func loadKey(account: String) -> String? {
-        // ── Data Protection keychain (no prompt)
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseDataProtectionKeychain as String: true
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data,
-           let key = String(data: data, encoding: .utf8) {
-            return key
-        }
-
-        // ── Legacy login keychain fallback (may show "Allow" prompt if not yet ACL-allowed)
-        query.removeValue(forKey: kSecUseDataProtectionKeychain as String)
-        item = nil
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data,
-              let key = String(data: data, encoding: .utf8) else {
-            return nil
-        }
+              let key = String(data: data, encoding: .utf8) else { return nil }
         return key
     }
 
     static func deleteKey(account: String) {
-        // Delete from both keychains in case the item exists in either.
-        let base: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        var dp = base
-        dp[kSecUseDataProtectionKeychain as String] = true
-        SecItemDelete(dp as CFDictionary)
-        SecItemDelete(base as CFDictionary)
+        SecItemDelete(query as CFDictionary)
     }
 
-    /// Migrates an item from the legacy login keychain to the Data Protection keychain.
-    /// Called by KeychainPreWarmer after a successful read. Once migrated, the item
-    /// lives in the Data Protection partition and never prompts again.
-    static func migrateToDataProtection(key: String, account: String) {
-        // Delete from legacy keychain first.
-        let legacyQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(legacyQuery as CFDictionary)
+    /// Rewrites an existing keychain item in-place with an open-access ACL.
+    /// Called by KeychainPreWarmer for the one-time migration of legacy items.
+    static func rewriteWithOpenAccess(account: String) -> Bool {
+        guard let key = loadKey(account: account) else { return false }
+        deleteKey(account: account)
+        guard (try? saveKey(key, account: account)) != nil else { return false }
+        return true
+    }
 
-        // Add to Data Protection keychain.
-        let data = Data(key.utf8)
-        let addAttrs: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecUseDataProtectionKeychain as String: true
-        ]
-        SecItemAdd(addAttrs as CFDictionary, nil)
+    // MARK: - Open-access ACL
+
+    /// Returns a SecAccess that allows any application to use the item without
+    /// a confirmation dialog. Passing an empty array (not nil) to SecAccessCreate
+    /// means "no restrictions — all apps allowed". Nil would mean "current app only".
+    private static func makeOpenAccess() -> SecAccess? {
+        var accessRef: SecAccess?
+        let emptyList = [] as CFArray        // empty = unrestricted access
+        let status = SecAccessCreate("blitzbot keychain item" as CFString,
+                                     emptyList, &accessRef)
+        return status == errSecSuccess ? accessRef : nil
     }
 
     // MARK: - Convenience accessors per provider

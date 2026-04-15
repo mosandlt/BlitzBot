@@ -1,43 +1,38 @@
 import Foundation
 
-/// Touches every known Keychain item once at launch so any ACL prompts fire early
-/// (at a predictable moment) instead of mid-recording.
+/// Rewrites every known Keychain item with an open-access ACL exactly once.
 ///
-/// Migration: items found in the legacy login keychain (created before v1.1.0) are
-/// moved to the Data Protection keychain. Once migrated, macOS never prompts for them
-/// again — the Data Protection keychain uses no per-app ACLs.
+/// Open-access ACL (SecAccessCreate with empty trustedApps array) means any application
+/// can read the item without a confirmation dialog — no CDHash dependency, no prompts
+/// after rebuilds. The migration runs once and sets a UserDefaults flag so it is never
+/// repeated.
 enum KeychainPreWarmer {
-    static func prewarm(profileStore: ProfileStore) {
-        DispatchQueue.global(qos: .utility).async {
-            var touched = 0
-            var migrated = 0
+    private static let migratedKey = "keychain.openACL.migrated"
 
-            // Legacy per-provider slots (pre-profile era)
-            let legacy = [
+    static func prewarm(profileStore: ProfileStore) {
+        guard !UserDefaults.standard.bool(forKey: migratedKey) else {
+            Log.write("Keychain prewarm: open-ACL migration already done, skipping")
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            let allAccounts = [
                 "anthropic-api-key",
                 KeychainStore.openAIAccount,
                 KeychainStore.ollamaAccount
-            ]
-            for account in legacy {
-                touched += 1
-                if let existing = KeychainStore.loadKey(account: account) {
-                    // Re-save: if item was in legacy keychain, this migrates it to
-                    // Data Protection keychain — future reads are completely silent.
-                    KeychainStore.migrateToDataProtection(key: existing, account: account)
+            ] + profileStore.profiles.map { $0.keychainAccount }
+
+            var migrated = 0
+            for account in allAccounts {
+                if KeychainStore.rewriteWithOpenAccess(account: account) {
                     migrated += 1
                 }
             }
 
-            // Per-profile slots
-            for profile in profileStore.profiles {
-                touched += 1
-                if let existing = KeychainStore.loadKey(account: profile.keychainAccount) {
-                    KeychainStore.migrateToDataProtection(key: existing, account: profile.keychainAccount)
-                    migrated += 1
-                }
+            DispatchQueue.main.async {
+                UserDefaults.standard.set(true, forKey: migratedKey)
             }
-
-            Log.write("Keychain prewarm: \(migrated)/\(touched) items migrated to Data Protection keychain")
+            Log.write("Keychain prewarm: \(migrated)/\(allAccounts.count) items rewritten with open-access ACL — will not run again")
         }
     }
 }
