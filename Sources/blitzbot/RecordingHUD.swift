@@ -480,9 +480,11 @@ private struct WaveformView: View {
         // Build paths (shared for fill and stroke)
         var fillPath = Path()
         var strokePath = Path()
+        let gain: Float = 4.5
         for i in 0..<count {
             let x = CGFloat(i) * xStep
-            let sampleVal = active ? samples[i] : samples[i] * 0.12
+            let raw = active ? samples[i] * gain : samples[i] * 0.6
+            let sampleVal = max(-1.0, min(1.0, raw))
             let y = midY - CGFloat(sampleVal) * amplitude
             if i == 0 {
                 fillPath.move(to: CGPoint(x: x, y: y))
