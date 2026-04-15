@@ -38,6 +38,9 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
         // User clicks "Always Allow" once per item and then it stays silent.
         KeychainPreWarmer.prewarm(profileStore: config.profileStore)
 
+        // Recover any WAV files left behind by a previous run that was killed during recording.
+        processor.recoverOrphanedRecordings(config: config)
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             MainActor.assumeIsolated {

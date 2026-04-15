@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 @MainActor
 final class ModeProcessor: ObservableObject {
@@ -51,6 +52,7 @@ final class ModeProcessor: ObservableObject {
 
     let recorder = AudioRecorder()
     private var isRecording = false
+    private var isProcessing = false      // reentrancy guard for stopAndProcess
     private var startedAt: Date?
     private var tickTimer: Timer?
     private var inactivityTimer: Timer?
@@ -219,16 +221,31 @@ final class ModeProcessor: ObservableObject {
     }
 
     private func stopAndProcess(config: AppConfig) async {
+        // Reentrancy guard: auto-stop timer and manual hotkey can both dispatch
+        // stopAndProcess within the same run-loop cycle. The second call must not
+        // proceed — recorder.stop() would return nil and the recording would be lost.
+        guard !isProcessing else {
+            Log.write("stopAndProcess: duplicate call ignored (already processing)")
+            return
+        }
+        isProcessing = true
+        defer { isProcessing = false }
+
         tearDownInactivityTimer()
         tickTimer?.invalidate()
         tickTimer = nil
         startedAt = nil
         isPaused = false
+        // Reset isRecording BEFORE recorder.stop() so that even if the guard below
+        // fails (recorder already stopped), the state machine is left clean.
+        isRecording = false
+
         guard let url = recorder.stop(), let mode = activeMode else {
-            status = .fehler("Keine Aufnahme")
+            Log.write("stopAndProcess: recorder.stop() returned nil — recording was already stopped or never started")
+            status = .fehler("Aufnahme verloren")
+            activeMode = nil
             return
         }
-        isRecording = false
         status = .transkribiert
 
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
@@ -278,6 +295,65 @@ final class ModeProcessor: ObservableObject {
             activeMode = nil
         }
     }
+
+    // MARK: - Orphaned recording recovery
+
+    /// Called at launch to recover any WAV files left behind by a previous run that
+    /// was killed or crashed during an active recording. Transcribes the most recent
+    /// orphaned file (if any), copies the result to the clipboard, and sets a visible
+    /// error status so the user knows something was recovered.
+    func recoverOrphanedRecordings(config: AppConfig) {
+        guard !config.whisperBinary.isEmpty, !config.whisperModel.isEmpty else { return }
+        let tmp = FileManager.default.temporaryDirectory
+        guard let files = try? FileManager.default.contentsOfDirectory(
+                at: tmp, includingPropertiesForKeys: [.creationDateKey], options: []) else { return }
+        let cutoff = Date().addingTimeInterval(-6 * 3600)  // ignore files older than 6 h
+        let orphans = files
+            .filter { $0.lastPathComponent.hasPrefix("blitzbot-") && $0.pathExtension == "wav" }
+            .filter { (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate).flatMap { $0 > cutoff } ?? false }
+            .sorted { a, b in
+                let da = (try? a.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return da > db
+            }
+        guard let best = orphans.first else { return }
+        let size = (try? FileManager.default.attributesOfItem(atPath: best.path)[.size] as? Int) ?? 0
+        guard size > 10_000 else {   // skip nearly-empty files (false starts)
+            orphans.forEach { try? FileManager.default.removeItem(at: $0) }
+            return
+        }
+        Log.write("Recovery: found orphaned recording \(best.lastPathComponent) (\(size) bytes) — transcribing")
+        Task {
+            let transcriber = WhisperTranscriber(binaryPath: config.whisperBinary,
+                                                 modelPath: config.whisperModel,
+                                                 language: config.outputLanguage.whisperLanguageFlag,
+                                                 vocabularyPrompt: config.vocabularyPrompt)
+            do {
+                let result = try transcriber.transcribe(audioURL: best)
+                let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                orphans.forEach { try? FileManager.default.removeItem(at: $0) }
+                guard !text.isEmpty else {
+                    Log.write("Recovery: transcript empty — nothing to restore")
+                    return
+                }
+                await MainActor.run {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    Log.write("Recovery: \(text.count) chars copied to clipboard")
+                    self.status = .fehler("Aufnahme wiederhergestellt — in Zwischenablage")
+                    Task {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        if case .fehler = self.status { self.status = .bereit }
+                    }
+                }
+            } catch {
+                Log.write("Recovery: transcription failed — \(error)")
+                orphans.forEach { try? FileManager.default.removeItem(at: $0) }
+            }
+        }
+    }
+
+    // MARK: - Language detection
 
     private func resolveLanguage(config: AppConfig,
                                  whisperDetected: String,
