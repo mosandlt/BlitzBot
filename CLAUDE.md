@@ -335,5 +335,5 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 - Evtl. Hold-to-Talk als Alternative zu Toggle
 - Lokales Whisper-Modell: bereits gesetzt (large-v3-turbo) — evtl. kleineres als Option
 - iOS-App testen + releasen (Scaffold existiert, nicht released)
-- LLM-Proxy ***REMOVED***
+- ***REMOVED***
 - Launch-at-Login Toggle via SMAppService
