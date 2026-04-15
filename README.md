@@ -576,6 +576,15 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.0.9 (2026-04-15)
+
+- **macOS Services integration — rewrite text without voice**. Select text in any app (Mail, Notes, Safari, Pages, most web inputs) → right-click → **Services** submenu → pick a blitzbot mode. The selection is replaced in place with the rewritten text. Works alongside the existing voice flow — no mic needed.
+  - Six service entries: **blitzbot: Business / Plus / Rage / Emoji / Prompt** plus **blitzbot: Umschreiben (Default)** which uses a configurable default mode.
+  - **New setting** in *Settings → Allgemein → Kontextmenü*: pick the default mode used by the "Umschreiben (Default)" entry + toggle whether to keep the original text in the clipboard on error.
+  - Language auto-detection: the selected text is routed to the DE or EN system prompt based on a lightweight stop-word analysis, no manual switching needed.
+  - If a service entry doesn't appear after install: *Settings → Allgemein → Kontextmenü → Dienste-Menü neu laden*, or log out / back in once. Apple's `pbs` daemon sometimes needs a kick.
+- **Note** on compatibility: works in any app that offers Services on its context menu (TextEdit, Mail, Notes, Pages, Safari text fields, most native apps). Some Electron apps (Slack desktop, Teams) don't surface Services — use the dictation flow there instead.
+
 ### v1.0.8 (2026-04-15)
 
 - **More visible waveform amplitude**: the yellow HUD waveform now renders peaks ~4.5× taller than before so speech is visually obvious at a glance. Samples are soft-clamped to ±1 so the wave still stays inside the 72 px HUD slot — no visual breakout.
