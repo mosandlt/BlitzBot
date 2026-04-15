@@ -21,9 +21,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.9</string>
+    <string>1.0.10</string>
     <key>CFBundleVersion</key>
-    <string>10</string>
+    <string>11</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>CFBundleLocalizations</key>
@@ -39,110 +39,5 @@
     <string>blitzbot nimmt dein Mikrofon auf, um Sprache lokal in Text umzuwandeln.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>blitzbot fügt transkribierten Text per Tastaturbefehl in die aktive App ein.</string>
-    <key>NSServices</key>
-    <array>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>blitzbot: Umschreiben (Default)</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>rewriteDefault</string>
-            <key>NSPortName</key>
-            <string>blitzbot</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
-                <string>public.plain-text</string>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>blitzbot: Business</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>rewriteBusiness</string>
-            <key>NSPortName</key>
-            <string>blitzbot</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
-                <string>public.plain-text</string>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>blitzbot: Plus</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>rewritePlus</string>
-            <key>NSPortName</key>
-            <string>blitzbot</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
-                <string>public.plain-text</string>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>blitzbot: Rage</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>rewriteRage</string>
-            <key>NSPortName</key>
-            <string>blitzbot</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
-                <string>public.plain-text</string>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>blitzbot: Emoji</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>rewriteEmoji</string>
-            <key>NSPortName</key>
-            <string>blitzbot</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
-                <string>public.plain-text</string>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>blitzbot: Prompt</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>rewritePrompt</string>
-            <key>NSPortName</key>
-            <string>blitzbot</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>public.utf8-plain-text</string>
-                <string>public.plain-text</string>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-    </array>
 </dict>
 </plist>
