@@ -576,6 +576,11 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.0.8 (2026-04-15)
+
+- **More visible waveform amplitude**: the yellow HUD waveform now renders peaks ~4.5× taller than before so speech is visually obvious at a glance. Samples are soft-clamped to ±1 so the wave still stays inside the 72 px HUD slot — no visual breakout.
+- Idle (post-stop) grey trace also slightly stronger for better continuity between recording and idle states.
+
 ### v1.0.7 (2026-04-14)
 
 - **Multi-LLM provider support**: switch between **Anthropic Claude**, **OpenAI ChatGPT**, and **Ollama** (local LLM). Per-provider model picker and API key. Normal mode remains local regardless of provider.

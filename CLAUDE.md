@@ -301,17 +301,23 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.0.6 (Stand: 2026-04-14)
+- **Aktuelle Version**: v1.0.8 (Stand: 2026-04-15)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
 - **Dev-Signing**: `blitzbot-dev` Cert (self-signed, in Login-Keychain, Codesigning-Trust gesetzt). Mit diesem Cert signierte Rebuilds überleben TCC + Keychain-ACL.
 - **Bundle-ID**: `de.blitzbot.app`
-- **Keychain-Service für API-Key**: `de.blitzbot.mac` / account `anthropic-api-key`
+- **Keychain-Service**: `de.blitzbot.mac` / Accounts `anthropic-api-key`, `openai-api-key`, `ollama-api-key`
+- **LLM-Provider**: Anthropic (default), OpenAI, Ollama — umschaltbar in Settings → Allgemein
+- **iOS Sub-Projekt**: `blitzbot-ios/` (Scaffold, nicht released; Hold-to-Talk + Share Extension + Siri Shortcut)
+  - Simulator: `./run-sim.sh` — baut + startet (SFSpeechRecognizer geht im Sim NICHT, nur auf echtem iPhone)
+  - Mac nativ: `./run-mac.sh` — braucht Apple-ID in Xcode (Personal Team, gratis)
 
 ## Release-Historie (Kurz)
 
 | Version | Kernänderung |
 |---|---|
+| v1.0.8 | Wellenform-Amplitude deutlich erhöht (4.5× Gain, geclampt auf ±1) |
+| v1.0.7 | Multi-LLM: Anthropic/OpenAI/Ollama, Provider-Picker, dynamische Ollama-Modelliste, stale-Error-Fix |
 | v1.0.6 | Echte Wellenform (Canvas/PCM), Pause/Resume, Auto-Stop-Uhr, Stille-Verzögerung 5s, 60s Default, Cancel-Button, Auto-Execute, Security-Fixes |
 | v1.0.5 | Ad-hoc Release-Pipeline, Gatekeeper-Workaround-Docs, bilingual Release Notes |
 | v1.0.4 | Fix: englischer Input → englischer Output (customPrompts sauber getrennt von Defaults) |
@@ -325,4 +331,6 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 - Apple Developer Program + Notarisierung (wenn User-Basis >0 wird, 99 €/Jahr, ersetzt ad-hoc)
 - Evtl. Hold-to-Talk als Alternative zu Toggle
 - Lokales Whisper-Modell: bereits gesetzt (large-v3-turbo) — evtl. kleineres als Option
-- Echtes Notarisieren für Release (braucht Apple-Dev-Account)
+- iOS-App testen + releasen (Scaffold existiert, nicht released)
+- Hyperspace LLM Proxy Integration (SAP-intern, geparkt)
+- Launch-at-Login Toggle via SMAppService
