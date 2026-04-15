@@ -50,13 +50,25 @@ enum KeychainStore {
     }
 
     static func loadKey(account: String) -> String? {
-        let query: [String: Any] = [
+        // Primary: search login keychain (open-access ACL items live here)
+        if let key = loadKeyRaw(account: account, extraAttrs: [:]) { return key }
+        // Fallback: items that a previous version moved to Data Protection keychain
+        if let key = loadKeyRaw(account: account,
+                                extraAttrs: [kSecUseDataProtectionKeychain as String: true]) {
+            return key
+        }
+        return nil
+    }
+
+    private static func loadKeyRaw(account: String, extraAttrs: [String: Any]) -> String? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
+        extraAttrs.forEach { query[$0.key] = $0.value }
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data,

@@ -7,7 +7,7 @@ import Foundation
 /// after rebuilds. The migration runs once and sets a UserDefaults flag so it is never
 /// repeated.
 enum KeychainPreWarmer {
-    private static let migratedKey = "keychain.openACL.migrated"
+    private static let migratedKey = "keychain.openACL.migrated.v2"
 
     static func prewarm(profileStore: ProfileStore) {
         guard !UserDefaults.standard.bool(forKey: migratedKey) else {
