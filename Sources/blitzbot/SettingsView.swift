@@ -292,28 +292,17 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Section("Kontextmenü (Rechtsklick → Dienste)") {
+            Section("Text umschreiben (Hotkey, ohne Stimme)") {
+                HStack {
+                    Text("Hotkey").frame(width: 90, alignment: .leading)
+                    KeyboardShortcuts.Recorder(for: .rewriteSelection)
+                }
                 Picker("Default-Modus", selection: $config.serviceDefaultMode) {
                     ForEach(Mode.allCases.filter { $0 != .normal }) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                Toggle("Bei Fehler Originaltext in Zwischenablage behalten",
-                       isOn: $config.serviceClipboardFallback)
-                Text("Text in beliebiger App markieren → Rechtsklick → Dienste → »blitzbot: …«. Ersetzt die Markierung mit dem umgeschriebenen Text. Der Default-Eintrag nutzt den hier gewählten Modus.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button("Dienste-Einstellungen öffnen") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.keyboard?Services") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    Button("Dienste-Menü neu laden") {
-                        NSUpdateDynamicServices()
-                    }
-                }
-                Text("Wenn die blitzbot-Einträge nicht erscheinen: App einmal in /Applications verschoben haben, dann »Dienste-Menü neu laden« klicken oder System abmelden/anmelden.")
+                Text("Markiere Text in einer beliebigen App, drücke den Hotkey — blitzbot liest die Auswahl, schreibt sie im Default-Modus um und fügt das Ergebnis zurück ein. Funktioniert in jeder App die Accessibility unterstützt. Als Fallback wird ⌘C simuliert und danach die Zwischenablage wiederhergestellt.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -259,7 +259,7 @@ Sources/blitzbot/
   PermissionsView.swift    ← Onboarding-Wizard (Mic, Accessibility, Whisper-Binary, Whisper-Model)
   RecordingHUD.swift       ← NSPanel Floating-HUD mit Timer + Waveform + Mode-Pills + Stop-Button + Sprach-Badge
   Updater.swift            ← GitHub-Releases-API-Check + Download + Install-in-place
-  ServiceProvider.swift    ← macOS Services (Rechtsklick → Dienste → blitzbot: …), 6 Modi, Paster-Flow
+  SelectionRewriter.swift  ← AX-Selection-Grab + ⌘C-Fallback, LLM-Call, Paster — triggered by ⌘⌥0 Hotkey
 
 blitzbot.app/Contents/
   Info.plist               ← Bundle-ID de.blitzbot.app, LSUIElement=YES, Version, CFBundleLocalizations
@@ -302,7 +302,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.0.9 (Stand: 2026-04-15)
+- **Aktuelle Version**: v1.0.10 (Stand: 2026-04-15)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
 - **Dev-Signing**: `blitzbot-dev` Cert (self-signed, in Login-Keychain, Codesigning-Trust gesetzt). Mit diesem Cert signierte Rebuilds überleben TCC + Keychain-ACL.
@@ -317,7 +317,8 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 | Version | Kernänderung |
 |---|---|
-| v1.0.9 | macOS Services: Rechtsklick → Dienste → blitzbot: Mode — ersetzt Markierung. Default-Modus + Clipboard-Fallback in Settings. |
+| v1.0.10 | Services rausgenommen (Gatekeeper blockt self-signed Apps) + neuer Hotkey `⌘⌥0`: liest Selection via AX/⌘C, schreibt im Default-Modus um. |
+| v1.0.9 | macOS Services: Rechtsklick → Dienste → blitzbot: Mode — **in v1.0.10 entfernt wegen Gatekeeper-Inkompatibilität mit non-notarized Apps.** |
 | v1.0.8 | Wellenform-Amplitude deutlich erhöht (4.5× Gain, geclampt auf ±1) |
 | v1.0.7 | Multi-LLM: Anthropic/OpenAI/Ollama, Provider-Picker, dynamische Ollama-Modelliste, stale-Error-Fix |
 | v1.0.6 | Echte Wellenform (Canvas/PCM), Pause/Resume, Auto-Stop-Uhr, Stille-Verzögerung 5s, 60s Default, Cancel-Button, Auto-Execute, Security-Fixes |

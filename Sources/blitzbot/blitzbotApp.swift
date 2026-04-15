@@ -7,7 +7,7 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
     let permissions: PermissionsChecker
     let hotkeys = HotkeyManager()
     var hud: RecordingHUDController?
-    var serviceProvider: ServiceProvider?
+    var rewriter: SelectionRewriter?
 
     var openWindow: ((String) -> Void)?
 
@@ -38,11 +38,12 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             MainActor.assumeIsolated {
                 self.hud = RecordingHUDController(processor: self.processor, config: self.config)
-                let provider = ServiceProvider(config: self.config, processor: self.processor)
-                self.serviceProvider = provider
-                NSApp.servicesProvider = provider
-                NSUpdateDynamicServices()
-                Log.write("Services provider registered")
+                self.rewriter = SelectionRewriter(config: self.config, processor: self.processor)
+                self.hotkeys.onRewriteSelection = { [weak self] in
+                    guard let self, let rewriter = self.rewriter else { return }
+                    Task { @MainActor in rewriter.rewriteSelection() }
+                }
+                Log.write("SelectionRewriter ready")
             }
         }
 

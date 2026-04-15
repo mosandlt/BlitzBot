@@ -576,6 +576,14 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.0.10 (2026-04-15)
+
+- **Text rewriting via hotkey — no voice, no Services menu required**. Select text in any app that supports Accessibility → press the configured hotkey (default `⌘⌥0`) → selection gets rewritten using the configured default mode. Result is pasted back over the selection.
+- **Why this replaces v1.0.9's Services approach**: macOS Gatekeeper consistently refuses to surface Services from non-notarized apps (`spctl -a` returns `rejected`, LaunchServices sets the `launch-disabled` flag). The self-signed dev workflow can't overcome that without an Apple Developer account ($99/yr). The hotkey path uses only Accessibility, which is already granted.
+- **Uses AX API first, ⌘C fallback**: reads the focused element's `AXSelectedText` attribute directly (works in most native apps). For apps that don't expose AX text (some Electron apps), it simulates ⌘C, reads the clipboard, and restores the previous clipboard contents afterwards — so your clipboard history stays intact.
+- **Setting moved**: *Settings → Allgemein → „Text umschreiben (Hotkey, ohne Stimme)"* — hotkey recorder + default-mode picker (Business/Plus/Rage/Emoji/Prompt).
+- NSServices entries and `ServiceProvider.swift` fully removed. The Info.plist is clean. No cross-app registration state remains.
+
 ### v1.0.9 (2026-04-15)
 
 - **macOS Services integration — rewrite text without voice**. Select text in any app (Mail, Notes, Safari, Pages, most web inputs) → right-click → **Services** submenu → pick a blitzbot mode. The selection is replaced in place with the rewritten text. Works alongside the existing voice flow — no mic needed.

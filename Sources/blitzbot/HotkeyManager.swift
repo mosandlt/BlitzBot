@@ -2,12 +2,13 @@ import AppKit
 import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
-    static let modeNormal    = Self("modeNormal",    default: .init(.one,   modifiers: [.command, .option]))
-    static let modeBusiness  = Self("modeBusiness",  default: .init(.two,   modifiers: [.command, .option]))
-    static let modePlus      = Self("modePlus",      default: .init(.three, modifiers: [.command, .option]))
-    static let modeRage      = Self("modeRage",      default: .init(.four,  modifiers: [.command, .option]))
-    static let modeEmoji     = Self("modeEmoji",     default: .init(.five,  modifiers: [.command, .option]))
-    static let modeAICommand = Self("modeAICommand", default: .init(.six,   modifiers: [.command, .option]))
+    static let modeNormal       = Self("modeNormal",       default: .init(.one,   modifiers: [.command, .option]))
+    static let modeBusiness     = Self("modeBusiness",     default: .init(.two,   modifiers: [.command, .option]))
+    static let modePlus         = Self("modePlus",         default: .init(.three, modifiers: [.command, .option]))
+    static let modeRage         = Self("modeRage",         default: .init(.four,  modifiers: [.command, .option]))
+    static let modeEmoji        = Self("modeEmoji",        default: .init(.five,  modifiers: [.command, .option]))
+    static let modeAICommand    = Self("modeAICommand",    default: .init(.six,   modifiers: [.command, .option]))
+    static let rewriteSelection = Self("rewriteSelection", default: .init(.zero,  modifiers: [.command, .option]))
 }
 
 extension Mode {
@@ -47,6 +48,7 @@ extension Mode {
 /// so changes in Settings take effect immediately without restart.
 final class HotkeyManager {
     var onTrigger: ((Mode) -> Void)?
+    var onRewriteSelection: (() -> Void)?
 
     private static let migrationKey = "hotkeyMigration.v1_0_1.businessModeAdded"
 
@@ -109,6 +111,15 @@ final class HotkeyManager {
                 self?.onTrigger?(mode)
             }
             return
+        }
+
+        if let shortcut = KeyboardShortcuts.getShortcut(for: .rewriteSelection),
+           let key = shortcut.key,
+           Int64(key.rawValue) == keyCode,
+           cgFlags(from: shortcut.modifiers) == eventMods {
+            DispatchQueue.main.async { [weak self] in
+                self?.onRewriteSelection?()
+            }
         }
     }
 
