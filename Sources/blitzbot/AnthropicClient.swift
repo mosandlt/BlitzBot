@@ -29,8 +29,7 @@ struct AnthropicClient {
         guard !systemPrompt.isEmpty else { return text }
 
         guard let url = URL(string: "\(baseURL)/v1/messages") else {
-            throw NSError(domain: "Anthropic", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Ungültige URL"])
+            throw LLMError.other(message: "Anthropic: ungültige URL")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -53,35 +52,48 @@ struct AnthropicClient {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw LLMError.classify(error, provider: "Anthropic")
+        }
+
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let http = response as? HTTPURLResponse
-            let statusCode = http?.statusCode ?? 0
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             struct APIErrorWrapper: Decodable {
                 struct APIError: Decodable { let type: String? }
                 let error: APIError?
             }
-            let userMessage: String
+            let bodyMessage: String?
             if let errorBody = try? JSONDecoder().decode(APIErrorWrapper.self, from: data),
                let errType = errorBody.error?.type {
                 switch errType {
-                case "rate_limit_error":    userMessage = "API-Limit erreicht — bitte kurz warten"
-                case "authentication_error": userMessage = "API-Key ungültig"
-                case "invalid_request_error": userMessage = "Ungültige Anfrage (Text zu lang?)"
-                default:                    userMessage = "API-Fehler (\(errType))"
+                case "rate_limit_error":      bodyMessage = "API-Limit erreicht — bitte kurz warten"
+                case "authentication_error":  bodyMessage = "API-Key ungültig"
+                case "invalid_request_error": bodyMessage = "Ungültige Anfrage (Text zu lang?)"
+                case "overloaded_error":      bodyMessage = "Anthropic überlastet"
+                default:                      bodyMessage = "API-Fehler (\(errType))"
                 }
             } else {
-                userMessage = "API-Fehler (HTTP \(statusCode))"
+                bodyMessage = nil
             }
-            throw NSError(domain: "Anthropic", code: statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: userMessage])
+            throw LLMError.fromHTTP(statusCode: statusCode,
+                                    provider: "Anthropic",
+                                    bodyMessage: bodyMessage)
         }
 
         struct APIResponse: Decodable {
             struct Block: Decodable { let type: String; let text: String? }
             let content: [Block]
         }
-        let decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+        let decoded: APIResponse
+        do {
+            decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+        } catch {
+            throw LLMError.other(message: "Anthropic: unerwartete Antwort")
+        }
         let result = decoded.content.compactMap { $0.text }.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         return result
     }

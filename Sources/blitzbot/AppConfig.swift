@@ -30,6 +30,16 @@ enum OutputLanguage: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+/// Transient hand-off from the global Office hotkey to the Office window. The
+/// hotkey must grab the current selection + remember the source app *before*
+/// blitzbot steals focus, so the window can pre-fill text and know where to
+/// paste the result back. Cleared by `OfficeView.onAppear`.
+struct PendingOfficeContent: Equatable {
+    let text: String
+    let sourceAppBundleID: String?
+    let createdAt: Date
+}
+
 enum LLMProvider: String, CaseIterable, Identifiable, Codable {
     case anthropic, openai, ollama
 
@@ -72,6 +82,39 @@ final class AppConfig: ObservableObject {
     /// `llmProvider` / per-provider keys; otherwise the legacy path is used.
     let profileStore: ProfileStore
 
+    /// Populated by the Office hotkey right before the window opens; consumed by
+    /// `OfficeView.onAppear`. Never persisted.
+    @Published var pendingOfficeContent: PendingOfficeContent?
+
+    /// When `true`, `LLMRouter.rewrite(...)` pipes outgoing user text through
+    /// `privacyEngine.anonymize(_:)` and the response back through
+    /// `privacyEngine.deanonymize(_:)`. Off by default — existing behavior unchanged
+    /// until the user explicitly opts in.
+    @Published var privacyMode: Bool {
+        didSet {
+            defaults.set(privacyMode, forKey: "privacyMode")
+            // Defense-in-depth: when the user turns privacy off, wipe the session
+            // mapping so we're not sitting on a PII table.
+            if !privacyMode { privacyEngine.reset() }
+            Log.write("Privacy: mode \(privacyMode ? "ON" : "OFF")")
+        }
+    }
+
+    /// In-memory PII mapping. Never written to disk. Cleared on toggle-off and
+    /// on app quit (the engine is an ObservableObject owned by this AppConfig).
+    let privacyEngine = PrivacyEngine()
+
+    /// User-maintained list of terms that should ALWAYS be anonymized, even if
+    /// NLTagger / NSDataDetector misses them. Typical use: short company
+    /// abbreviations, internal project code names, user's own last
+    /// name, etc. Persisted as a comma-separated string in UserDefaults.
+    @Published var privacyCustomTerms: [String] {
+        didSet {
+            defaults.set(privacyCustomTerms, forKey: "privacyCustomTerms")
+            privacyEngine.customTerms = privacyCustomTerms
+        }
+    }
+
     // Context-menu (macOS Services) settings
     @Published var serviceDefaultMode: Mode {
         didSet { defaults.set(serviceDefaultMode.rawValue, forKey: "serviceDefaultMode") }
@@ -84,6 +127,17 @@ final class AppConfig: ObservableObject {
     private static let promptMigrationKey = "promptMigration.v1_0_4.customOnly"
 
     init() {
+        // Register soft defaults. These apply when the user has never explicitly
+        // set a value — any write via the normal `@Published` didSet chain wins
+        // over what's registered here, so explicit opt-outs are preserved.
+        //
+        // Privacy Mode: defaults to ON. Outbound text is anonymized before it
+        // leaves the machine; users who want the pre-v1.2.2 behavior can flip
+        // it off in Settings → Allgemein → Privacy (their choice is persisted).
+        UserDefaults.standard.register(defaults: [
+            "privacyMode": true
+        ])
+
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         self.whisperBinary = defaults.string(forKey: "whisperBinary")
             ?? "/opt/homebrew/bin/whisper-cli"
@@ -155,6 +209,16 @@ final class AppConfig: ObservableObject {
         } else {
             self.serviceDefaultMode = .business
         }
+
+        // Privacy mode — default registered as `true` at the top of init (v1.2.2+).
+        // Existing installs that had it explicitly turned off keep their setting.
+        self.privacyMode = defaults.bool(forKey: "privacyMode")
+        // Custom anonymization terms (persistent, separate from the session mapping).
+        // Read once into a local to avoid "self used before all stored properties
+        // initialized" — then push into the engine at the very end of init.
+        let storedTerms = defaults.stringArray(forKey: "privacyCustomTerms") ?? []
+        self.privacyCustomTerms = storedTerms
+        self.privacyEngine.customTerms = storedTerms
         let storedFallback = defaults.object(forKey: "serviceClipboardFallback")
         self.serviceClipboardFallback = storedFallback != nil
             ? defaults.bool(forKey: "serviceClipboardFallback")

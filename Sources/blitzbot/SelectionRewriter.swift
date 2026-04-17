@@ -2,6 +2,74 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+/// Captures the currently selected text from the focused app, for any caller
+/// (`SelectionRewriter`'s fire-and-forget ⌘⌥0 flow + Office Mode's preview window).
+///
+/// Strategy: AX API first (reads `AXSelectedText` directly, works in most native
+/// apps without a keyboard round-trip). Falls back to simulating ⌘C, reading the
+/// pasteboard diff, and restoring the previous pasteboard contents — so the user's
+/// clipboard history stays intact.
+@MainActor
+enum TextSelectionGrabber {
+    /// Returns the selected text, or empty string if nothing is selected / AX fails.
+    static func grab() -> String {
+        if let ax = axSelection(), !ax.isEmpty { return ax }
+        return clipboardCopyFallback()
+    }
+
+    private static func axSelection() -> String? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        let focusedErr = AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focused
+        )
+        guard focusedErr == .success, let focused else { return nil }
+        let element = focused as! AXUIElement
+        var selected: CFTypeRef?
+        let err = AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            &selected
+        )
+        guard err == .success, let text = selected as? String else { return nil }
+        return text
+    }
+
+    private static func clipboardCopyFallback() -> String {
+        let pb = NSPasteboard.general
+        let previous = pb.string(forType: .string)
+        let prevChangeCount = pb.changeCount
+
+        simulateCommandC()
+        let deadline = Date().addingTimeInterval(0.25)
+        while pb.changeCount == prevChangeCount && Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
+        }
+        let captured = pb.string(forType: .string) ?? ""
+
+        if let previous {
+            pb.clearContents()
+            pb.setString(previous, forType: .string)
+        }
+        return captured
+    }
+
+    private static func simulateCommandC() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let cKey: CGKeyCode = 8
+        let down = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: true)
+        down?.flags = .maskCommand
+        let up = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: false)
+        up?.flags = .maskCommand
+        let tap: CGEventTapLocation = .cgAnnotatedSessionEventTap
+        down?.post(tap: tap)
+        usleep(15_000)
+        up?.post(tap: tap)
+    }
+}
+
 /// Rewrites the currently selected text via the configured default mode.
 ///
 /// Triggered by the `rewriteSelection` global hotkey. Flow:
@@ -61,66 +129,10 @@ final class SelectionRewriter {
 
     // MARK: - Selection acquisition
 
-    /// Primary: AX API. Fallback: ⌘C + clipboard diff.
+    /// Delegates to the shared `TextSelectionGrabber` utility at the top of this file
+    /// so Office Mode can use the same AX → ⌘C fallback code path.
     private func grabSelection() -> String {
-        if let ax = axSelection(), !ax.isEmpty { return ax }
-        return clipboardCopyFallback()
-    }
-
-    private func axSelection() -> String? {
-        let systemWide = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        let focusedErr = AXUIElementCopyAttributeValue(
-            systemWide,
-            kAXFocusedUIElementAttribute as CFString,
-            &focused
-        )
-        guard focusedErr == .success, let focused else { return nil }
-        let element = focused as! AXUIElement
-        var selected: CFTypeRef?
-        let err = AXUIElementCopyAttributeValue(
-            element,
-            kAXSelectedTextAttribute as CFString,
-            &selected
-        )
-        guard err == .success, let text = selected as? String else { return nil }
-        return text
-    }
-
-    /// Simulates ⌘C, reads pasteboard, then restores the previous pasteboard contents.
-    /// Only used when AX doesn't expose a selection (e.g., many Electron apps).
-    private func clipboardCopyFallback() -> String {
-        let pb = NSPasteboard.general
-        let previous = pb.string(forType: .string)
-        let prevChangeCount = pb.changeCount
-
-        simulateCommandC()
-        // Wait briefly for the copy to land
-        let deadline = Date().addingTimeInterval(0.25)
-        while pb.changeCount == prevChangeCount && Date() < deadline {
-            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.01))
-        }
-        let captured = pb.string(forType: .string) ?? ""
-
-        // Restore previous pasteboard so we don't trash the user's clipboard.
-        if let previous {
-            pb.clearContents()
-            pb.setString(previous, forType: .string)
-        }
-        return captured
-    }
-
-    private func simulateCommandC() {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let cKey: CGKeyCode = 8
-        let down = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: true)
-        down?.flags = .maskCommand
-        let up = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: false)
-        up?.flags = .maskCommand
-        let tap: CGEventTapLocation = .cgAnnotatedSessionEventTap
-        down?.post(tap: tap)
-        usleep(15_000)
-        up?.post(tap: tap)
+        TextSelectionGrabber.grab()
     }
 
     // MARK: - Pipeline

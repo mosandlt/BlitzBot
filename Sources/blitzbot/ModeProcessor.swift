@@ -11,6 +11,9 @@ final class ModeProcessor: ObservableObject {
         case formuliert
         case fertig
         case fehler(String)
+        /// Recoverable LLM failure. HUD stays open and offers a profile-switch retry.
+        /// The real recovery state (transcript, prompt, timer) lives in `recoveryContext`.
+        case recovery(String)
 
         var label: String {
             switch self {
@@ -20,12 +23,34 @@ final class ModeProcessor: ObservableObject {
             case .formuliert:     return "Formuliert…"
             case .fertig:         return "Fertig"
             case .fehler(let m):  return "Fehler: \(m)"
+            case .recovery(let m): return "Verbindungsfehler: \(m)"
             }
         }
     }
 
+    /// Snapshot of everything needed to retry a failed LLM call against a
+    /// different connection profile — without re-transcribing.
+    ///
+    /// Lives only in memory + mirrored to the system pasteboard (safety net);
+    /// never written to disk, per privacy rules. 30 s after entering recovery
+    /// the state is discarded (transcript stays in the pasteboard).
+    struct RecoveryContext: Equatable {
+        let transcript: String
+        let mode: Mode
+        let systemPrompt: String
+        let language: String
+        let autoReturn: Bool
+        /// Profile that just failed. UI disables this entry so the user can't
+        /// pick the same broken endpoint again.
+        let failedProfileID: UUID?
+        var secondsLeft: Int
+    }
+
     @Published var status: Status = .bereit
     @Published var activeMode: Mode?
+
+    /// Active recovery state. `nil` whenever we're not in a recovery flow.
+    @Published var recoveryContext: RecoveryContext?
 
     /// Clears a stuck `.fehler` back to `.bereit`. No-op if another status is active.
     func clearErrorIfAny() {
@@ -58,12 +83,22 @@ final class ModeProcessor: ObservableObject {
     private var inactivityTimer: Timer?
     private var inactivityTimerDeadline: Date?
     private var silenceBannerTimer: Timer?
+    private var recoveryTimer: Timer?
     private var levelCancellable: AnyCancellable?
     private var voiceActivityCancellable: AnyCancellable?
     private static let silenceThreshold: Float = 0.03
     private static let silenceBannerDelay: TimeInterval = 5
+    /// How long the user has to pick a new profile before the recovery state
+    /// is discarded (transcript remains on the pasteboard as a safety net).
+    static let recoveryTimeoutSeconds: TimeInterval = 30
 
     func toggle(mode: Mode, config: AppConfig) {
+        // Non-voice modes (e.g. officeMode) must not drive the recording pipeline;
+        // they have their own window. Defensive guard — callers already filter.
+        guard mode.isVoiceMode else {
+            Log.write("ModeProcessor.toggle ignored: \(mode.rawValue) is not a voice mode")
+            return
+        }
         if isRecording {
             if activeMode == mode {
                 Task { await stopAndProcess(config: config) }
@@ -115,6 +150,14 @@ final class ModeProcessor: ObservableObject {
     }
 
     private func startRecording(mode: Mode, config: AppConfig) {
+        // Starting a new recording supersedes any pending recovery state.
+        // The previous transcript is safe on the pasteboard (mirrored when
+        // recovery was entered), so we just drop the state and move on.
+        if recoveryContext != nil {
+            Log.write("Recovery: abandoned — new recording started (transcript still in clipboard)")
+            invalidateRecoveryTimer()
+            recoveryContext = nil
+        }
         do {
             let url = try recorder.start()
             activeMode = mode
@@ -255,44 +298,184 @@ final class ModeProcessor: ObservableObject {
                                              modelPath: config.whisperModel,
                                              language: config.outputLanguage.whisperLanguageFlag,
                                              vocabularyPrompt: config.vocabularyPrompt)
+        let raw: String
+        let resolvedLanguage: String
         do {
             let result = try transcriber.transcribe(audioURL: url)
-            let raw = result.text
-            let resolvedLanguage = resolveLanguage(config: config,
-                                                   whisperDetected: result.detectedLanguage,
-                                                   transcript: raw)
+            raw = result.text
+            resolvedLanguage = resolveLanguage(config: config,
+                                               whisperDetected: result.detectedLanguage,
+                                               transcript: raw)
             detectedLanguage = resolvedLanguage
             Log.write("TRANSCRIPT lang=\(resolvedLanguage) (whisper=\(result.detectedLanguage)): <\(raw.count) chars>")
-            guard !raw.isEmpty else {
-                status = .fehler("Leere Transkription")
-                return
-            }
-            var output = raw
-            let prompt = config.prompt(for: mode, language: resolvedLanguage)
-            if !prompt.isEmpty {
-                status = .formuliert
-                output = try await LLMRouter.rewrite(text: raw, systemPrompt: prompt, config: config)
-            }
-            let outputTrimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !outputTrimmed.isEmpty else {
-                Log.write("PASTE skipped: empty output after processing")
-                status = .fehler("Leeres Ergebnis")
-                activeMode = nil
-                return
-            }
-            let runReturn = autoExecute
-            Log.write("PASTE len=\(output.count) autoReturn=\(runReturn)")
-            Paster.pasteText(output, autoReturn: runReturn)
-            status = .fertig
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            if case .fertig = status {
-                status = .bereit
-                activeMode = nil
-            }
         } catch {
-            Log.write("ERROR: \(error)")
+            Log.write("ERROR Whisper: \(error)")
             status = .fehler(error.localizedDescription)
             activeMode = nil
+            return
+        }
+        guard !raw.isEmpty else {
+            status = .fehler("Leere Transkription")
+            activeMode = nil
+            return
+        }
+
+        let prompt = config.prompt(for: mode, language: resolvedLanguage)
+        await processTranscript(raw: raw,
+                                mode: mode,
+                                language: resolvedLanguage,
+                                prompt: prompt,
+                                autoReturn: autoExecute,
+                                config: config,
+                                profileOverride: nil)
+    }
+
+    /// Runs the LLM step + paste. Factored out so the recovery retry path can
+    /// re-enter it with a different profile without re-transcribing.
+    ///
+    /// On a recoverable LLM failure, seeds `recoveryContext` and switches status
+    /// to `.recovery(message)` instead of bubbling up a dead-end error.
+    private func processTranscript(raw: String,
+                                   mode: Mode,
+                                   language: String,
+                                   prompt: String,
+                                   autoReturn: Bool,
+                                   config: AppConfig,
+                                   profileOverride: ConnectionProfile?) async {
+        var output = raw
+        if !prompt.isEmpty {
+            status = .formuliert
+            do {
+                if let override = profileOverride {
+                    output = try await LLMRouter.rewrite(text: raw,
+                                                         systemPrompt: prompt,
+                                                         config: config,
+                                                         profileOverride: override)
+                } else {
+                    output = try await LLMRouter.rewrite(text: raw,
+                                                         systemPrompt: prompt,
+                                                         config: config)
+                }
+            } catch {
+                let providerLabel = profileOverride?.name
+                    ?? config.profileStore.activeProfile?.name
+                    ?? config.llmProvider.displayName
+                let llmErr = LLMError.classify(error, provider: providerLabel)
+                Log.write("ERROR LLM (\(providerLabel)): \(llmErr.errorDescription ?? "unknown")")
+                if llmErr.isRecoverable {
+                    let ctx = RecoveryContext(
+                        transcript: raw,
+                        mode: mode,
+                        systemPrompt: prompt,
+                        language: language,
+                        autoReturn: autoReturn,
+                        failedProfileID: profileOverride?.id ?? config.profileStore.activeProfileID,
+                        secondsLeft: Int(Self.recoveryTimeoutSeconds)
+                    )
+                    enterRecovery(context: ctx,
+                                  errorMessage: llmErr.errorDescription ?? "Verbindungsfehler")
+                    return
+                }
+                status = .fehler(llmErr.errorDescription ?? "Fehler")
+                activeMode = nil
+                return
+            }
+        }
+        let outputTrimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !outputTrimmed.isEmpty else {
+            Log.write("PASTE skipped: empty output after processing")
+            status = .fehler("Leeres Ergebnis")
+            activeMode = nil
+            return
+        }
+        Log.write("PASTE len=\(output.count) autoReturn=\(autoReturn)")
+        Paster.pasteText(output, autoReturn: autoReturn)
+        status = .fertig
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        if case .fertig = status {
+            status = .bereit
+            activeMode = nil
+        }
+    }
+
+    // MARK: - Recovery (inline HUD)
+
+    /// Seeds recovery state and starts the 30 s countdown. Mirrors the transcript
+    /// to the system pasteboard *before* anything else so a crash or user abandon
+    /// never loses the recording.
+    private func enterRecovery(context: RecoveryContext, errorMessage: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(context.transcript, forType: .string)
+        Log.write("Recovery: entered (\(errorMessage)) — transcript mirrored to clipboard (\(context.transcript.count) chars)")
+
+        recoveryContext = context
+        status = .recovery(errorMessage)
+
+        invalidateRecoveryTimer()
+        recoveryTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.tickRecoveryTimer()
+            }
+        }
+    }
+
+    private func tickRecoveryTimer() {
+        guard var ctx = recoveryContext else {
+            invalidateRecoveryTimer()
+            return
+        }
+        ctx.secondsLeft -= 1
+        if ctx.secondsLeft <= 0 {
+            Log.write("Recovery: 30s timeout — transcript stays in clipboard")
+            invalidateRecoveryTimer()
+            recoveryContext = nil
+            status = .bereit
+            activeMode = nil
+        } else {
+            recoveryContext = ctx
+        }
+    }
+
+    private func invalidateRecoveryTimer() {
+        recoveryTimer?.invalidate()
+        recoveryTimer = nil
+    }
+
+    /// User dismissed the recovery panel. Transcript remains on the pasteboard.
+    func cancelRecovery() {
+        guard recoveryContext != nil else { return }
+        Log.write("Recovery: user cancelled — transcript stays in clipboard")
+        invalidateRecoveryTimer()
+        recoveryContext = nil
+        status = .bereit
+        activeMode = nil
+    }
+
+    /// User picked an alternative profile. Re-runs the LLM step with the same
+    /// transcript/prompt against `profile`. If this one also fails recoverably,
+    /// we re-enter recovery with the new failed profile marked.
+    func retryWithProfile(_ profile: ConnectionProfile, config: AppConfig) {
+        guard let ctx = recoveryContext else { return }
+        guard profile.id != ctx.failedProfileID else {
+            Log.write("Recovery: retry ignored — same profile as failed")
+            return
+        }
+        invalidateRecoveryTimer()
+        recoveryContext = nil
+        let raw = ctx.transcript
+        let mode = ctx.mode
+        let language = ctx.language
+        let prompt = ctx.systemPrompt
+        let autoReturn = ctx.autoReturn
+        Log.write("Recovery: retry with profile \"\(profile.name)\" (\(profile.provider.rawValue))")
+        Task { [weak self] in
+            await self?.processTranscript(raw: raw,
+                                          mode: mode,
+                                          language: language,
+                                          prompt: prompt,
+                                          autoReturn: autoReturn,
+                                          config: config,
+                                          profileOverride: profile)
         }
     }
 

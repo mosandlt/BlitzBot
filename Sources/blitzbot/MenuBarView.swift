@@ -41,6 +41,7 @@ struct MenuBarView: View {
             Text("blitzbot").font(.headline)
             Spacer()
             statusIndicator
+            PrivacyToggleButton()
             Button {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "settings")
@@ -80,7 +81,7 @@ struct MenuBarView: View {
         case .bereit, .fertig: return .green
         case .aufnahme:        return .red
         case .transkribiert, .formuliert: return .yellow
-        case .fehler:          return .orange
+        case .fehler, .recovery: return .orange
         }
     }
 
@@ -121,6 +122,7 @@ private struct ModeRow: View {
     let mode: Mode
     @EnvironmentObject var processor: ModeProcessor
     @EnvironmentObject var config: AppConfig
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack(spacing: 10) {
@@ -133,14 +135,28 @@ private struct ModeRow: View {
             }
             Spacer()
             Text(shortcutString).font(.caption2).monospaced().foregroundStyle(.secondary)
-            Button(buttonLabel) {
-                processor.toggle(mode: mode, config: config)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(buttonColor)
+            Button(buttonLabel) { handleTap() }
+                .buttonStyle(.borderless)
+                .foregroundStyle(buttonColor)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    private func handleTap() {
+        if mode == .officeMode {
+            // Route through the app delegate's toggle so the same path runs whether
+            // the user used the hotkey or this button (dock-icon toggle, selection
+            // capture etc. stay consistent).
+            if let delegate = NSApp.delegate as? BlitzbotAppDelegate {
+                delegate.toggleOfficeWindow()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "office")
+            }
+        } else {
+            processor.toggle(mode: mode, config: config)
+        }
     }
 
     private var shortcutString: String { mode.defaultShortcutLabel }
@@ -148,6 +164,7 @@ private struct ModeRow: View {
     private var isActive: Bool { processor.activeMode == mode }
 
     private var buttonLabel: String {
+        if mode == .officeMode { return "Öffnen" }
         guard isActive else { return "Starte" }
         switch processor.status {
         case .aufnahme:                   return "Stop"

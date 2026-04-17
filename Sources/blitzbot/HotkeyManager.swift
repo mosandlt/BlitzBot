@@ -9,17 +9,21 @@ extension KeyboardShortcuts.Name {
     static let modeEmoji        = Self("modeEmoji",        default: .init(.five,  modifiers: [.command, .option]))
     static let modeAICommand    = Self("modeAICommand",    default: .init(.six,   modifiers: [.command, .option]))
     static let rewriteSelection = Self("rewriteSelection", default: .init(.zero,  modifiers: [.command, .option]))
+    /// Office mode — no default. Earlier v1.2.0 builds defaulted to ⌘⌥O, but that
+    /// collides with other apps (Outlook, etc). Set your own combo in Settings → Hotkeys.
+    static let toggleOffice     = Self("toggleOffice")
 }
 
 extension Mode {
     var shortcutName: KeyboardShortcuts.Name {
         switch self {
-        case .normal:    return .modeNormal
-        case .business:  return .modeBusiness
-        case .plus:      return .modePlus
-        case .rage:      return .modeRage
-        case .emoji:     return .modeEmoji
-        case .aiCommand: return .modeAICommand
+        case .normal:     return .modeNormal
+        case .business:   return .modeBusiness
+        case .plus:       return .modePlus
+        case .rage:       return .modeRage
+        case .emoji:      return .modeEmoji
+        case .aiCommand:  return .modeAICommand
+        case .officeMode: return .toggleOffice
         }
     }
 
@@ -30,12 +34,13 @@ extension Mode {
 
     private var fallbackShortcutLabel: String {
         switch self {
-        case .normal:    return "⌘⌥1"
-        case .business:  return "⌘⌥2"
-        case .plus:      return "⌘⌥3"
-        case .rage:      return "⌘⌥4"
+        case .normal:     return "⌘⌥1"
+        case .business:   return "⌘⌥2"
+        case .plus:       return "⌘⌥3"
+        case .rage:       return "⌘⌥4"
         case .emoji:     return "⌘⌥5"
-        case .aiCommand: return "⌘⌥6"
+        case .aiCommand:  return "⌘⌥6"
+        case .officeMode: return "—"
         }
     }
 }
@@ -49,8 +54,10 @@ extension Mode {
 final class HotkeyManager {
     var onTrigger: ((Mode) -> Void)?
     var onRewriteSelection: (() -> Void)?
+    var onToggleOffice: (() -> Void)?
 
     private static let migrationKey = "hotkeyMigration.v1_0_1.businessModeAdded"
+    private static let officeDefaultResetKey = "hotkeyMigration.v1_2_1.officeDefaultRemoved"
 
     // Kept alive so the tap is not released.
     private var eventTap: CFMachPort?
@@ -100,7 +107,9 @@ final class HotkeyManager {
         let relevantFlags: CGEventFlags = [.maskCommand, .maskAlternate, .maskShift, .maskControl]
         let eventMods = event.flags.intersection(relevantFlags)
 
-        for mode in Mode.allCases {
+        // Voice-mode hotkeys only. Non-voice modes (e.g. officeMode) have their own
+        // dedicated callbacks below so the hotkey doesn't accidentally start a recording.
+        for mode in Mode.voiceModes {
             guard let shortcut = KeyboardShortcuts.getShortcut(for: mode.shortcutName),
                   let key = shortcut.key,
                   Int64(key.rawValue) == keyCode,
@@ -120,6 +129,16 @@ final class HotkeyManager {
             DispatchQueue.main.async { [weak self] in
                 self?.onRewriteSelection?()
             }
+            return
+        }
+
+        if let shortcut = KeyboardShortcuts.getShortcut(for: .toggleOffice),
+           let key = shortcut.key,
+           Int64(key.rawValue) == keyCode,
+           cgFlags(from: shortcut.modifiers) == eventMods {
+            DispatchQueue.main.async { [weak self] in
+                self?.onToggleOffice?()
+            }
         }
     }
 
@@ -136,9 +155,22 @@ final class HotkeyManager {
 
     private func migrateIfNeeded() {
         let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: Self.migrationKey) else { return }
-        for mode in Mode.allCases { KeyboardShortcuts.reset(mode.shortcutName) }
-        defaults.set(true, forKey: Self.migrationKey)
-        Log.write("Hotkeys migrated: reset all mode shortcuts to v1.0.1 defaults")
+        if !defaults.bool(forKey: Self.migrationKey) {
+            for mode in Mode.allCases { KeyboardShortcuts.reset(mode.shortcutName) }
+            defaults.set(true, forKey: Self.migrationKey)
+            Log.write("Hotkeys migrated: reset all mode shortcuts to v1.0.1 defaults")
+        }
+        // v1.2.1 follow-up: earlier builds shipped ⌘⌥O as the Office default, which
+        // collides with other apps. Drop the shortcut so users who never customized
+        // it start clean; anyone who explicitly set their own combo is left alone.
+        if !defaults.bool(forKey: Self.officeDefaultResetKey) {
+            if let current = KeyboardShortcuts.getShortcut(for: .toggleOffice),
+               current.key == .o,
+               current.modifiers == [.command, .option] {
+                KeyboardShortcuts.reset(.toggleOffice)
+                Log.write("Hotkeys migrated: removed stale ⌘⌥O default for toggleOffice")
+            }
+            defaults.set(true, forKey: Self.officeDefaultResetKey)
+        }
     }
 }

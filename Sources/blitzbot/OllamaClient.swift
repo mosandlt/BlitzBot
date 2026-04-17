@@ -20,8 +20,7 @@ struct OllamaClient {
     func rewrite(text: String, systemPrompt: String) async throws -> String {
         guard !systemPrompt.isEmpty else { return text }
         guard let url = URL(string: "\(baseURL)/api/chat") else {
-            throw NSError(domain: "Ollama", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Ungültige Ollama-URL"])
+            throw LLMError.other(message: "Ollama: ungültige URL")
         }
 
         var request = URLRequest(url: url)
@@ -42,37 +41,43 @@ struct OllamaClient {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response): (Data, URLResponse)
+        let data: Data
+        let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
-            throw NSError(domain: "Ollama", code: -2,
-                          userInfo: [NSLocalizedDescriptionKey: "Ollama nicht erreichbar (\(baseURL))"])
+            throw LLMError.classify(error, provider: "Ollama")
         }
 
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             struct APIErrorWrapper: Decodable { let error: String? }
-            let userMessage: String
+            let bodyMessage: String?
             if let err = try? JSONDecoder().decode(APIErrorWrapper.self, from: data),
                let msg = err.error, !msg.isEmpty {
                 // Trim to avoid huge error payloads leaking
                 let safe = msg.prefix(120)
-                userMessage = "Ollama-Fehler: \(safe)"
+                bodyMessage = "Ollama-Fehler: \(safe)"
             } else if statusCode == 404 {
-                userMessage = "Modell \"\(model)\" nicht installiert — via \"ollama pull \(model)\" laden"
+                bodyMessage = "Modell \"\(model)\" nicht installiert — via \"ollama pull \(model)\" laden"
             } else {
-                userMessage = "Ollama-Fehler (HTTP \(statusCode))"
+                bodyMessage = nil
             }
-            throw NSError(domain: "Ollama", code: statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: userMessage])
+            throw LLMError.fromHTTP(statusCode: statusCode,
+                                    provider: "Ollama",
+                                    bodyMessage: bodyMessage)
         }
 
         struct APIResponse: Decodable {
             struct Message: Decodable { let content: String? }
             let message: Message?
         }
-        let decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+        let decoded: APIResponse
+        do {
+            decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+        } catch {
+            throw LLMError.other(message: "Ollama: unerwartete Antwort")
+        }
         let result = (decoded.message?.content ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return result

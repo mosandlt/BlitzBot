@@ -23,7 +23,10 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 ## Table of contents
 
-- [The six modes](#the-six-modes)
+- [The seven modes](#the-seven-modes)
+- [Office Mode — interactive selection-rewriter](#office-mode--interactive-selection-rewriter)
+- [Privacy Mode — local PII anonymization](#privacy-mode--local-pii-anonymization)
+- [Connection recovery — no transcript left behind](#connection-recovery--no-transcript-left-behind)
 - [Connection profiles](#connection-profiles)
 - [Installation](#installation)
 - [First launch on macOS (Gatekeeper workaround)](#first-launch-on-macos-gatekeeper-workaround)
@@ -42,7 +45,9 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 ---
 
-## The six modes
+## The seven modes
+
+Modes 1–6 are voice-driven (mic + Whisper + paste). Mode 7 (**Office**) is the first non-voice mode: a dedicated window that accepts typed text or a dropped file.
 
 | # | Mode          | Default hotkey | Tagline                                 | Behavior |
 |---|---------------|----------------|------------------------------------------|----------|
@@ -52,6 +57,7 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 | 4 | **Rage**        | `⌘⌥4`          | Frustration in. Calm out.                | Claude strips insults and aggressive tone — the substance of your criticism stays sharp. Good for writing angry emails you won't regret. |
 | 5 | **Emoji**       | `⌘⌥5`          | Voice in. Text with emojis out.          | Original wording 1:1, dotted with tasteful emojis (roughly 1 per 1-2 sentences). |
 | 6 | **Prompt**      | `⌘⌥6`          | Idea in. Prompt out.                     | Dictate a loose idea — Claude turns it into a clean, precise prompt you can paste into any AI tool (ChatGPT, Claude, Claude Code, Cursor, Aider, Copilot, Gemini, …). Output is the prompt itself, not the result. |
+| 7 | **Office**      | *(no default — set in Settings → Hotkeys)* | Selection in. Choice + paste out. | Interactive selection-rewriter. Grabs the currently selected text, shows it in a preview, lets you pick any voice-mode prompt (Business, Plus, Rage, Emoji, Prompt), override profile + model, tweak the text, then pastes the result back into the source app on ⌘↵. File-drop also works as an alternative input. See [Office Mode](#office-mode--interactive-selection-rewriter). |
 
 ### Output language (auto-detected or manual)
 
@@ -67,13 +73,139 @@ While recording, the HUD shows a small `DE`/`EN` badge next to the mode name so 
 
 Start a recording with `⌘⌥1` (Normal), change your mind halfway through, press `⌘⌥4` while still speaking — the recording keeps going, but will be processed as Rage when you stop. The floating HUD reflects the current mode live.
 
-Or click directly: the HUD has five **mode pills** at the bottom. Click any pill during recording to switch live. The **Stop** button on the right ends the recording with a mouse click — useful when your keyboard is full of other input and you don't want to hit the hotkey.
+Or click directly: the HUD has six **mode pills** at the bottom (Office is excluded from the HUD — it has its own window). Click any pill during recording to switch live. The **Stop** button on the right ends the recording with a mouse click — useful when your keyboard is full of other input and you don't want to hit the hotkey.
 
 ### Everything customizable
 
 - **Hotkeys**: Settings → Hotkeys → click the recorder next to each mode, press your desired combo.
 - **Prompts**: Settings → Prompts → edit the Claude system prompt per mode. Make Business more formal, Rage softer, Emoji denser.
 - **Vocabulary**: Settings → Vocabulary → add proper nouns and jargon. They're fed to Whisper as context so it spells *Anthropic*, *Kubernetes*, your colleagues' names, etc. correctly instead of phonetic nonsense.
+
+---
+
+## Office Mode — interactive selection-rewriter
+
+The seventh mode is different from the voice-driven six: no mic, no Whisper. It's a **preview-and-confirm** version of the ⌘⌥0 selection-rewriter — you see what got captured, you pick which mode to apply, you review the result, then you decide when to paste it back.
+
+### The flow
+
+1. Highlight text in any app (Mail, Safari, Notes, your IDE, any Electron thing, …).
+2. Press your configured Office hotkey. **There is no default** — assign one under Settings → Hotkeys. While the window is open blitzbot also appears in the Dock + ⌘-Tab, so you can jump back to it from anywhere; the Dock icon disappears again when the window closes.
+3. Blitzbot grabs the selection *before* stealing focus (AX API first, `⌘C` simulation as fallback) and remembers the source app's bundle ID for the paste-back step.
+4. The window opens pre-filled with the grabbed text. The source-app name appears as a chip above the editor.
+5. **Profile + model switcher** — top of the header. Dropdown lists every connection profile; picking one overrides which endpoint this session uses, without mutating your global active profile. The model field pre-fills with the picked profile's preferred model and is editable, so you can e.g. try Opus for this one request and keep Sonnet as your default.
+6. Pick a mode from the picker row — Business / Plus / Rage / Emoji / Prompt. The default is whatever `Settings → Allgemein → Text umschreiben → Default-Modus` is set to (shared with ⌘⌥0).
+7. Tweak the text if needed — the editor is fully editable.
+8. Hit `⌘↵` or click **Verarbeiten**. LLMRouter sends it through the chosen profile/model with the picked mode's prompt.
+9. The result appears below, and is **automatically copied to the clipboard** as a safety net.
+10. Hit `⌘↵` again (now labelled **In App einfügen**) or click the button. Blitzbot closes the Office window, re-activates the source app by bundle ID, and simulates ⌘V so the result lands where your selection was.
+
+### Fallbacks
+
+- **No selection** when you press ⌘⌥O? Blitzbot pre-fills from the current clipboard contents (up to the 200 KB text limit). The source-app info is still captured, so paste-back still works.
+- **Window opened via MenuBar → Office → Öffnen** (not the hotkey)? There's no AX selection available because blitzbot already stole focus by the time the popover opens. The editor falls back to clipboard contents; paste-back is unavailable (no source app was captured), the result just stays on the clipboard.
+- **File drop** — drop a text file (`.txt`, `.md`, `.json`, `.csv`, `.log`, plus common code types) into the small dropzone below the editor to replace the input. Hard limit: **200 KB**. Binary types are intentionally unsupported. File-origin inputs have no source app, so the result goes to the clipboard only.
+
+### Design notes
+
+- **Toggle window**: press your Office hotkey a second time to close.
+- **Dock appearance** — while Office is open blitzbot toggles its activation policy to `.regular` so you get a Dock icon + ⌘-Tab entry. Closing the window reverts to the menu-bar-only `.accessory` policy.
+- **Auto-copy to clipboard** is always on once processing succeeds, regardless of whether you paste-back. That's the "clipboard by default" safety net — even if paste-back fails or you close the window without confirming, the result is there.
+- **Re-process button** appears after a first result so you can try the same input against a different mode/profile/model without re-grabbing.
+- **Session override, not global** — the profile/model picker changes only the current Office session; your global active profile stays put.
+- **No disk persistence** — everything lives in window state, gone on close.
+
+---
+
+## Privacy Mode — local PII anonymization
+
+blitzbot ships a **pre-send anonymizer for every outbound LLM call**. Names, company mentions, places, emails, IPs, URLs, and phone numbers are detected locally and replaced with neutral tokens *before* any text leaves the app. The LLM's response is then automatically rewritten back into the real terms on the way in, so for the user the flow looks unchanged — but what the provider sees is redacted.
+
+Every path that hits an LLM — all six voice modes, Office Mode, the `⌘⌥0` selection-rewriter, and the recovery retries — goes through the same wrap. One mechanism, consistent guarantee.
+
+> **Default since v1.2.2: ON.** Privacy Mode is active on a fresh install and stays active unless you explicitly turn it off. Your choice is persisted — an explicit off survives app restarts and updates. If you had Privacy Mode explicitly turned off in an earlier version, that setting is preserved.
+
+### How it works
+
+1. **Scan.** When a request is about to go out, the input text is analyzed by several local detectors running in parallel:
+   - Apple's `NLTagger(.nameType)` for personal names, organization names, and place names
+   - `NSDataDetector` for phone numbers, URLs, and postal addresses (street + number + ZIP + city, any locale Apple's parser knows)
+   - regex for email addresses, IPv4 + IPv6 addresses, MAC addresses, IBAN bank account numbers, and credit-card numbers (with a Luhn-checksum filter to rule out random long numbers)
+   - plus your own "Immer anonymisieren" list from Settings (case-insensitive, whole-word match) — catches short all-caps abbreviations and internal code names that the NER model misses
+2. **Substitute.** Each detected entity is swapped for a bracketed all-caps token. The full set of kinds:
+
+   | Kind | Placeholder shape |
+   |---|---|
+   | Personal name | `[NAME_1]`, `[NAME_2]`, … |
+   | Organization / company | `[UNTERNEHMEN_1]`, … |
+   | Place (city, region) | `[ORT_1]`, … |
+   | Postal address | `[ADRESSE_1]`, … |
+   | Email address | `[EMAIL_1]`, … |
+   | IP address (v4 or v6) | `[IP_1]`, … |
+   | URL | `[URL_1]`, … |
+   | Phone number | `[TELEFON_1]`, … |
+   | IBAN | `[IBAN_1]`, … |
+   | Credit-card number | `[KREDITKARTE_1]`, … |
+   | MAC address | `[MAC_1]`, … |
+
+   The indexer grows per kind as new entities appear. The same original value reuses its existing token, so multi-turn context stays consistent — if you mention the same colleague in two dictations, they get the same placeholder both times.
+3. **Send.** The anonymized text goes to the LLM along with a short bilingual instruction appended to the system prompt: "any `[XXXX_N]` tokens in the input are placeholders for real entities — keep them verbatim, do **not** fill them in, do **not** apply your own anonymization to plain-text words". This prevents the model from either "correcting" the placeholders or inventing new ones of its own.
+4. **Reverse.** The model's response is scanned for the placeholders you sent out and they're swapped back into the original values before the text reaches your clipboard, your active app, or the Office preview. Longer placeholders are matched first so `[NAME_10]` doesn't get eaten as `[NAME_1]` + `"0]"`.
+
+### Activation and deactivation
+
+Three equivalent ways to flip Privacy Mode — all toggle the same underlying state, all persist.
+
+| Surface | Where |
+|--------|-------|
+| Menu-bar popover header | Click the ⚡ icon → the shield pill next to the status indicator is the toggle. Shows live entity count when on. |
+| Office window header | Shield pill next to the profile/model pickers. Click opens a popover with the full session mapping (`[NAME_1] ↔ Alex Example` etc.) and an inline toggle + reset. |
+| Recording HUD header | Shield pill between the language badge and the timer. Single click toggles. Compact — no popover on the HUD (nonactivating panel). |
+| Settings → Allgemein → Privacy | Full section with the toggle, live entity count, reset button, and the "Immer anonymisieren" editor. |
+
+On a **fresh install** Privacy Mode starts **on**. On an **existing install** your persisted choice wins — if you had it off before, it stays off.
+
+### "Immer anonymisieren" — custom term list
+
+`NLTagger` is ML-based and sometimes misses short all-caps words or domain-specific code names. The *Immer anonymisieren* field in Settings → Allgemein → Privacy takes a comma-separated list of terms that are always replaced, case-insensitive, whole-word only. Typical entries: your employer's short name, internal project codenames, your own last name, client code names. Persisted in UserDefaults; stays empty by default.
+
+### Privacy guarantees
+
+- **No external service ever sees the originals.** All detectors are macOS system frameworks, running locally. A privacy feature that phoned home would defeat its own point.
+- **Mapping stays in memory.** Lives on `AppConfig.privacyEngine`, never written to UserDefaults, Keychain, or disk.
+- **Reset on toggle-off and quit.** Turning the feature off wipes the session mapping; app quit disposes of the engine entirely. No PII dictionary sitting around between runs.
+- **Log only counts.** `~/.blitzbot/logs/blitzbot.log` records `Privacy: anonymized name=3 organization=1 …` — never the originals themselves.
+- **System prompts pass through unchanged** (except for the bilingual instruction added on the fly when Privacy Mode is on). Default prompts contain tool names like `Claude`/`ChatGPT`/`Cursor` that `NLTagger` would flag; placeholdering them would tank output quality. If your *custom* prompt overrides contain PII, anonymize it before saving — the feature treats system prompts as canonical app content.
+
+### What you see when it's running
+
+- Green shield pill in the menu bar, Office header, and HUD, with the session's unique-entity count.
+- Settings → Allgemein → Privacy: live counter + a *Zurücksetzen* button.
+- Office Mode: click the shield pill to open a popover with the full `placeholder ↔ original` mapping, color-coded by kind (names blue, orgs purple, places teal, emails orange, URLs green, phones indigo, IPs pink).
+- Log lines per request so you can verify the mapping is firing.
+
+---
+
+## Connection recovery — no transcript left behind
+
+What happens when you've dictated 20 seconds, the Claude call fails halfway through, and you're on a flaky coffee-shop Wi-Fi? Before: the transcript was lost to an auto-hiding error toast. Now: the HUD stays open and offers you a second chance.
+
+**Recoverable failures**:
+
+- network-level: no internet, timeout, DNS error, TLS failure, host unreachable
+- HTTP 401 / 403 (bad / expired key)
+- HTTP 5xx (provider outage)
+
+When one of those fires, the HUD switches into **recovery mode**:
+
+- the transcript is **mirrored to the system clipboard immediately** (safety net — even if the app crashes now, your text is safe)
+- a profile picker appears inline — every connection profile you have, with the just-failed profile marked **fehlgeschlagen** and disabled
+- a 30-second countdown pill starts. If you pick nothing, recovery state is discarded — but the transcript still lives in the clipboard
+- click a different profile, hit **Erneut senden** — the retry reuses the same transcript against the alternate endpoint, without re-transcribing. If the retry also fails, the flow re-enters recovery with the new profile flagged
+
+What's *not* recoverable (these still go to the old `.fehler` state): empty transcriptions, "no API key configured", malformed responses, context-length exceeded. Those aren't a profile problem and another endpoint won't fix them.
+
+The retry path is an **override** — your globally-active profile stays put. Use this when your work VPN proxy is flaky but your direct-Anthropic profile works.
 
 ---
 
@@ -282,7 +414,10 @@ mode router (for non-Normal modes, LLM provider is configurable: Claude / OpenAI
     ├─ Plus     → LLM call with light-touch polish prompt
     ├─ Rage     → LLM call with de-escalation prompt
     ├─ Emoji    → LLM call with emoji-insertion prompt
-    └─ Prompt   → LLM call that turns a loose idea into a tool-agnostic prompt
+    ├─ Prompt   → LLM call that turns a loose idea into a tool-agnostic prompt
+    └─ Office   → LLM call with structured-summary prompt (bypasses voice path entirely;
+                  input is typed text or a dropped file, output lands in a preview window
+                  instead of being auto-pasted)
     ↓
 NSPasteboard.general (writes the result)
     ↓
@@ -432,17 +567,24 @@ Shipping a Gatekeeper-clean release requires the Apple Developer Program (99 €
 
 ```
 Sources/blitzbot/
-  blitzbotApp.swift         @main + AppDelegate + MenuBarExtra + Windows
+  blitzbotApp.swift         @main + AppDelegate + MenuBarExtra + Windows (Settings / Setup / Office)
   AppConfig.swift           UserDefaults, Keychain wrapper, vocabulary, per-mode prompts
   AppInfo.swift             Version constants and repo URL
-  Mode.swift                enum (Normal…Prompt) + display names + default prompts
-  HotkeyManager.swift       KeyboardShortcuts integration per mode
-  ModeProcessor.swift       state machine: toggle → record → transcribe → formulate → paste
+  Mode.swift                enum (Normal…Prompt…Office) + display names + default prompts
+  HotkeyManager.swift       KeyboardShortcuts integration per mode + rewriteSelection + toggleOffice
+  ModeProcessor.swift       state machine: toggle → record → transcribe → formulate → paste.
+                             Also owns the inline-recovery flow (RecoveryContext, 30 s timer,
+                             profile-switch retry) for recoverable LLM errors.
   AudioRecorder.swift       AVAudioEngine setup + rolling PCM sample buffer + RMS level publishing
   WhisperTranscriber.swift  subprocess wrapper around whisper-cli
-  LLMRouter.swift           routes LLM calls through the active profile or legacy fallback
-  AnthropicClient.swift     Claude API request/response (supports custom base URL + auth schemes)
-  OpenAIClient.swift        OpenAI-compatible API client
+  LLMRouter.swift           routes LLM calls through the active profile or legacy fallback;
+                             also provides a profile-override overload used by recovery retries
+  LLMError.swift            structured error type (connectionFailed / authFailed / serverError /
+                             other). `isRecoverable` drives the inline-recovery UI.
+  AnthropicClient.swift     Claude API request/response (supports custom base URL + auth schemes);
+                             throws `LLMError` for recoverable failures
+  OpenAIClient.swift        OpenAI-compatible API client (same error contract)
+  OllamaClient.swift        Ollama local-LLM client (same error contract)
   Paster.swift              NSPasteboard + CGEvent Cmd+V simulation
   KeychainStore.swift       API key read/write/delete — open-access ACL, no prompts ever
   KeychainPreWarmer.swift   one-time ACL migration at first launch → silent forever after
@@ -453,10 +595,14 @@ Sources/blitzbot/
   Log.swift                 simple append-only log at ~/.blitzbot/logs/blitzbot.log
   Permissions.swift         TCC status checker for mic/accessibility/whisper
   PermissionsView.swift     onboarding wizard UI
-  MenuBarView.swift         popover content (header, mode list, footer)
+  MenuBarView.swift         popover content (header, mode list, footer); Office row opens its window
   SettingsView.swift        TabView (General / Profile / Hotkeys / Prompts / Vocabulary / Setup / About)
   ProfilesView.swift        Profile tab UI — list, editor, scanner, quick-switcher
-  RecordingHUD.swift        NSPanel + SwiftUI content for the floating recording HUD
+  RecordingHUD.swift        NSPanel + SwiftUI content for the floating recording HUD.
+                             Renders the inline recovery UI (profile picker + countdown) when
+                             `ModeProcessor.Status` is `.recovery`.
+  OfficeView.swift          Office Mode window — dropzone, text editor, Verarbeiten button,
+                             result preview, copy-to-clipboard. Calls LLMRouter directly.
   SelectionRewriter.swift   ⌘⌥0 hotkey — reads AX selection, rewrites via LLM, pastes back
   Updater.swift             GitHub Releases API check + download + install
 ```
@@ -620,6 +766,54 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.2.3 (2026-04-17)
+
+- **Expanded PII coverage.** Privacy Mode now additionally detects and anonymizes:
+  - **Postal addresses** — full street + house number + ZIP + city, via `NSDataDetector(.address)`. Replaced with `[ADRESSE_1]`, `[ADRESSE_2]`, …
+  - **IBAN bank account numbers** — two-letter country code + two check digits + 11–30 alphanumeric, with or without whitespace blocks. Replaced with `[IBAN_1]`, …
+  - **Credit-card numbers** — 13–19 digit sequences that pass a **Luhn checksum** check. The checksum filter rules out random long numbers (order IDs, reference numbers) that happen to match the digit count, so false-positives stay low. Replaced with `[KREDITKARTE_1]`, …
+  - **MAC addresses** — colon- or dash-separated six-group hex (`aa:bb:cc:dd:ee:ff`). Replaced with `[MAC_1]`, …
+  - **IPv6** — the full eight-group form is now caught alongside IPv4 under the same `[IP_n]` placeholder.
+
+  All detection remains 100% local (Apple system frameworks + regex + a Luhn helper). No new external dependencies. The mapping popover and settings list color-code the new kinds.
+
+### v1.2.2 (2026-04-17)
+
+- **Privacy Mode now defaults to ON.** New installs have the pre-send anonymizer active out of the box; existing installs that previously had Privacy explicitly turned off keep their setting (persisted value wins over the registered default). Switches in Settings → Allgemein → Privacy, the menu-bar popover, the Office window header, or the recording HUD all flip the same state.
+- **What the anonymizer does.** Before a request goes to an LLM, the outbound text is scanned locally (no external service) and entities in the following categories are replaced with stable placeholders:
+
+  | Category | Detector | Placeholder shape |
+  |---|---|---|
+  | Personal names | Apple `NLTagger(.nameType)` | `[NAME_1]`, `[NAME_2]`, … |
+  | Organizations / companies | `NLTagger` + user-supplied *Immer anonymisieren* list | `[UNTERNEHMEN_1]`, … |
+  | Place names | `NLTagger` | `[ORT_1]`, … |
+  | Email addresses | regex | `[EMAIL_1]`, … |
+  | IPv4 addresses | regex | `[IP_1]`, … |
+  | URLs | `NSDataDetector(.link)` | `[URL_1]`, … |
+  | Phone numbers | `NSDataDetector(.phoneNumber)` | `[TELEFON_1]`, … |
+
+  The model's response is rewritten back into the real terms on the way in, so your clipboard / pasted text / Office preview always shows the original values — only what leaves the machine is redacted. The mapping lives only in memory, is wiped on toggle-off and on app quit, and is never written to disk.
+- **System-prompt hint rewritten** to stop the LLM from hallucinating placeholders. The previous version listed example placeholder shapes which led some models to re-anonymize plain-text names on their own (producing placeholders that had no reverse mapping). The new instruction is token-shape-based only and explicitly tells the model not to introduce placeholders of its own.
+- **"Immer anonymisieren" custom term list** (Settings → Allgemein → Privacy). Terms that are always anonymized, even if `NLTagger` misses them — useful for short all-caps company abbreviations, internal project codenames, or your own last name. Case-insensitive, whole-word match. Persisted separately from the session mapping. List-based UX: each term gets its own row with a minus button; a dedicated input + plus button (Return also adds) for new entries.
+- **Session mapping inline in Settings.** The Privacy section now shows the current `placeholder ↔ original` table directly in Settings → Allgemein → Privacy (color-coded by kind), in addition to the existing Office-Mode popover. Makes it easy to audit what the engine has captured without jumping into another window.
+- **Menu-bar shield toggle** (small improvement). The privacy shield is now also in the menu-bar popover header next to the status indicator — gives a quick visual confirmation of the active state without having to open Office Mode, a recording HUD, or Settings. Same toggle, same state.
+
+### v1.2.1 (2026-04-17)
+
+- **Privacy Mode**: opt-in local anonymization for every outbound LLM call. Personal names, organizations, places (via `NLTagger`), emails / IPv4 (regex), URLs + phone numbers (`NSDataDetector`) are replaced with stable placeholders like `[NAME_1]` before leaving the app, and the model's response is rewritten back into your real terms before it hits the clipboard or gets pasted. Mapping lives in memory only, wiped on toggle-off and app quit — no persisted PII database. Toggle in Settings → Allgemein *or* via the shield pill in the Office window header and the recording HUD (same state, live entity count).
+- **Model dropdown in Office.** The earlier text field is replaced with a live-fetched list of models from the current profile's endpoint (via the existing `ModelDiscovery`). Picking one overrides the model for this session only. Shows a *Profil-Standard* entry to reset.
+- **Office hotkey now opt-in.** The earlier ⌘⌥O default collided with other apps; a one-time migration strips it for users still on the default. Set your own combo in Settings → Hotkeys.
+- **Per-session profile switcher** in the Office header. Pick any connection profile from a dropdown for this one request, without mutating the globally active profile.
+- **Dock visibility** while Office is open — `LSUIElement` removed from Info.plist and `.accessory` set programmatically in `applicationWillFinishLaunching`. Toggle to `.regular` when Office opens (Dock icon + ⌘-Tab); back to `.accessory` on close. Also handles SwiftUI session-restored Office windows via an `onAppear` hook.
+- **"Office" removed from the mode picker inside the Office window** — it was the marker for the window path, not a prompt you'd pick there.
+
+### v1.2.0 (2026-04-17)
+
+- **Office Mode — 7th mode**: interactive selection-rewriter. Grab the selection in any app, open a window with the text pre-filled, pick a mode, optionally tweak the input, and paste the result back into the source app on ⌘↵. Clipboard fallback when no selection is active, clipboard auto-copy once processing succeeds, file-drop (txt/md/json/csv/code, 200 KB hard cap) as an alternative input for when you'd rather drop a file than highlight text. Preserves the fire-and-forget `⌘⌥0` flow untouched.
+- **Inline connection recovery**: when a voice-mode LLM call fails with a recoverable error (connection, auth, 5xx), the HUD no longer hides and loses the transcript. Instead it stays open and shows a profile picker inline — the failed profile is marked and disabled, a 30 s countdown pill ticks down, pick any other profile and *Erneut senden* retries the same transcript without re-transcribing. The transcript is mirrored to the system pasteboard the instant recovery starts (safety net), and stays there even if the countdown expires.
+- **Structured LLM errors** (`LLMError.swift`): every client (Anthropic, OpenAI, Ollama) now throws `.connectionFailed` / `.authFailed` / `.serverError` / `.other` instead of a plain `NSError`. `isRecoverable` decides whether the HUD offers recovery or falls through to the old auto-hiding `.fehler` state.
+- **Non-voice modes are filtered out of voice UI paths**: the HUD mode pills and the hotkey dispatcher only iterate `Mode.voiceModes` (modes 1–6). Office Mode appears in the menu-bar popover with an *Öffnen* button instead of *Starte*, and in Settings → Hotkeys as a normal recorder row.
 
 ### v1.1.0 (2026-04-15)
 

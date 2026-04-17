@@ -16,11 +16,21 @@ final class AudioRecorder: ObservableObject {
     private var ringWriteIdx: Int = 0
 
     func start() throws -> URL {
+        // Guard: if a tap is still installed from a previous (possibly aborted) recording,
+        // remove it before installing a new one. installTap on an already-tapped bus throws
+        // an NSException that Swift cannot catch, causing an immediate crash.
+        let input = engine.inputNode
+        if engine.isRunning || currentURL != nil {
+            input.removeTap(onBus: 0)
+            engine.stop()
+            file = nil
+            currentURL = nil
+        }
+
         let tempDir = FileManager.default.temporaryDirectory
         let url = tempDir.appendingPathComponent("blitzbot-\(UUID().uuidString).wav")
         currentURL = url
 
-        let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
 
         let settings: [String: Any] = [

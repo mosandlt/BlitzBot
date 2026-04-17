@@ -285,6 +285,29 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Privacy") {
+                Toggle(isOn: $config.privacyMode) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundStyle(config.privacyMode ? .green : .secondary)
+                        Text("Privacy Mode")
+                            .fontWeight(.medium)
+                    }
+                }
+                Text("Ausgehender Text wird lokal durchsucht (NLTagger + NSDataDetector + Regex) und erkannte Namen, Firmennamen, Orte, E-Mails, IPs, URLs und Telefonnummern werden vor dem Versand an die KI durch neutrale Platzhalter (z. B. `[NAME_1]`, `[UNTERNEHMEN_1]`) ersetzt. Die Antwort der KI wird anhand derselben Mapping-Tabelle zurückübersetzt, bevor sie bei dir landet.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Die Zuordnung lebt nur im Arbeitsspeicher und wird beim Deaktivieren sowie beim App-Beenden verworfen. Es wird nichts auf Disk geschrieben. Die Erkennung selbst läuft zu 100 % lokal über macOS-System-Frameworks — kein externer API-Call.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if config.privacyMode {
+                    PrivacyEngineStatusRow(engine: config.privacyEngine)
+                    PrivacyMappingInlineList(engine: config.privacyEngine)
+                }
+                Divider().padding(.vertical, 4)
+                PrivacyCustomTermsEditor()
+            }
+
             Section("Ausgabesprache / Output Language") {                Picker("Sprache", selection: $config.outputLanguage) {
                     Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
                     Text("Deutsch").tag(OutputLanguage.de)
@@ -302,7 +325,7 @@ struct SettingsView: View {
                     KeyboardShortcuts.Recorder(for: .rewriteSelection)
                 }
                 Picker("Default-Modus", selection: $config.serviceDefaultMode) {
-                    ForEach(Mode.allCases.filter { $0 != .normal }) { mode in
+                    ForEach(Mode.allCases.filter { $0 != .normal && $0 != .officeMode }) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
@@ -496,5 +519,201 @@ private struct TabButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// Editor for the persistent "always anonymize" term list. NLTagger sometimes
+/// misses short all-caps abbreviations or domain-specific code names; this list
+/// lets users pin those down explicitly, case-insensitive.
+///
+/// List-based UX: each term is its own row with a minus button; a new-term input
+/// at the bottom adds via plus button or Return.
+private struct PrivacyCustomTermsEditor: View {
+    @EnvironmentObject var config: AppConfig
+    @State private var newTerm: String = ""
+    @FocusState private var newTermFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Immer anonymisieren")
+                .font(.callout.bold())
+            Text("Begriffe die immer ersetzt werden — auch wenn die automatische Erkennung sie übersieht. Typisch: der Name deines Arbeitgebers, interne Projekt-Codenamen, dein Nachname. Groß-/Kleinschreibung ist egal, Wortgrenzen werden beachtet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if config.privacyCustomTerms.isEmpty {
+                Text("Noch keine Begriffe — füg unten welche hinzu.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 3) {
+                    ForEach(config.privacyCustomTerms, id: \.self) { term in
+                        termRow(term)
+                    }
+                }
+            }
+
+            HStack(spacing: 6) {
+                TextField("Neuen Begriff eingeben", text: $newTerm)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .focused($newTermFocused)
+                    .onSubmit(addTerm)
+                Button {
+                    addTerm()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(canAdd ? Color.accentColor : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAdd)
+                .help("Begriff hinzufügen (Return)")
+            }
+        }
+    }
+
+    private func termRow(_ term: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock.shield.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(term)
+                .font(.system(.body, design: .monospaced))
+            Spacer()
+            Button {
+                removeTerm(term)
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.red.opacity(0.85))
+            }
+            .buttonStyle(.plain)
+            .help("Begriff entfernen")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.secondary.opacity(0.06))
+        )
+    }
+
+    private var canAdd: Bool {
+        !newTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func addTerm() {
+        let trimmed = newTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // Case-insensitive duplicate check — keep the existing spelling if the
+        // user types it again differently.
+        if config.privacyCustomTerms.contains(where: {
+            $0.caseInsensitiveCompare(trimmed) == .orderedSame
+        }) {
+            newTerm = ""
+            return
+        }
+        var updated = config.privacyCustomTerms
+        updated.append(trimmed)
+        config.privacyCustomTerms = updated.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        newTerm = ""
+        newTermFocused = true   // keep focus so user can add multiple in a row
+    }
+
+    private func removeTerm(_ term: String) {
+        config.privacyCustomTerms.removeAll {
+            $0.caseInsensitiveCompare(term) == .orderedSame
+        }
+    }
+}
+
+/// Live view of the current session's placeholder ↔ original mapping, inlined
+/// in the Settings → Privacy section so users can see exactly what the engine
+/// has anonymized so far without jumping into Office Mode's popover.
+private struct PrivacyMappingInlineList: View {
+    @ObservedObject var engine: PrivacyEngine
+
+    var body: some View {
+        let mappings = engine.orderedMappings()
+        if !mappings.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Anonymisierte Einträge dieser Session")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(mappings) { entry in
+                            row(entry)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+    }
+
+    private func row(_ entry: PrivacyEngine.MappingEntry) -> some View {
+        HStack(spacing: 8) {
+            Text(entry.placeholder)
+                .font(.system(.caption, design: .monospaced).bold())
+                .foregroundStyle(color(for: entry.kind))
+                .frame(minWidth: 120, alignment: .leading)
+            Image(systemName: "arrow.left.and.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text(entry.original)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(color(for: entry.kind).opacity(0.08))
+        )
+    }
+
+    private func color(for kind: PrivacyEngine.EntityKind) -> Color {
+        switch kind {
+        case .person:       return .blue
+        case .organization: return .purple
+        case .place:        return .teal
+        case .address:      return .mint
+        case .email:        return .orange
+        case .ip:           return .pink
+        case .url:          return .green
+        case .phone:        return .indigo
+        case .iban:         return .brown
+        case .creditCard:   return .red
+        case .mac:          return .gray
+        }
+    }
+}
+
+/// Live status for the Privacy session. Observes `PrivacyEngine` directly so the
+/// counter and Reset button update as `anonymize(_:)` registers new entities.
+private struct PrivacyEngineStatusRow: View {
+    @ObservedObject var engine: PrivacyEngine
+
+    var body: some View {
+        HStack {
+            Text("Aktive Session")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text("\(engine.totalEntities) Entität\(engine.totalEntities == 1 ? "" : "en")")
+                .font(.caption.bold())
+                .foregroundStyle(engine.totalEntities > 0 ? .green : .secondary)
+            Button("Zurücksetzen") { engine.reset() }
+                .controlSize(.small)
+                .disabled(engine.totalEntities == 0)
+        }
     }
 }

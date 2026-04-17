@@ -26,8 +26,7 @@ struct OpenAIClient {
         guard !systemPrompt.isEmpty else { return text }
 
         guard let url = URL(string: "\(baseURL)/v1/chat/completions") else {
-            throw NSError(domain: "OpenAI", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Ungültige URL"])
+            throw LLMError.other(message: "OpenAI: ungültige URL")
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -49,37 +48,44 @@ struct OpenAIClient {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw LLMError.classify(error, provider: "OpenAI")
+        }
+
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let http = response as? HTTPURLResponse
-            let statusCode = http?.statusCode ?? 0
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             struct APIErrorWrapper: Decodable {
                 struct APIError: Decodable { let type: String?; let code: String? }
                 let error: APIError?
             }
-            let userMessage: String
+            let bodyMessage: String?
             if let errorBody = try? JSONDecoder().decode(APIErrorWrapper.self, from: data),
                let err = errorBody.error {
                 let errType = err.type ?? err.code ?? "unknown"
                 if statusCode == 401 {
-                    userMessage = "API-Key ungültig"
+                    bodyMessage = "API-Key ungültig"
                 } else {
                     switch errType {
                     case "invalid_api_key":
-                        userMessage = "API-Key ungültig"
+                        bodyMessage = "API-Key ungültig"
                     case "rate_limit_exceeded", "insufficient_quota":
-                        userMessage = "API-Limit erreicht — bitte kurz warten"
+                        bodyMessage = "API-Limit erreicht — bitte kurz warten"
                     case "context_length_exceeded":
-                        userMessage = "Ungültige Anfrage (Text zu lang?)"
+                        bodyMessage = "Ungültige Anfrage (Text zu lang?)"
                     default:
-                        userMessage = "API-Fehler (\(errType))"
+                        bodyMessage = "API-Fehler (\(errType))"
                     }
                 }
             } else {
-                userMessage = "API-Fehler (HTTP \(statusCode))"
+                bodyMessage = nil
             }
-            throw NSError(domain: "OpenAI", code: statusCode,
-                          userInfo: [NSLocalizedDescriptionKey: userMessage])
+            throw LLMError.fromHTTP(statusCode: statusCode,
+                                    provider: "OpenAI",
+                                    bodyMessage: bodyMessage)
         }
 
         struct APIResponse: Decodable {
@@ -89,7 +95,12 @@ struct OpenAIClient {
             }
             let choices: [Choice]
         }
-        let decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+        let decoded: APIResponse
+        do {
+            decoded = try JSONDecoder().decode(APIResponse.self, from: data)
+        } catch {
+            throw LLMError.other(message: "OpenAI: unerwartete Antwort")
+        }
         let result = decoded.choices.compactMap { $0.message.content }
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)

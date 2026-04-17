@@ -1,40 +1,51 @@
 import Foundation
 
 enum Mode: String, CaseIterable, Identifiable, Codable {
-    case normal, business, plus, rage, emoji, aiCommand
+    case normal, business, plus, rage, emoji, aiCommand, officeMode
 
     var id: String { rawValue }
 
+    /// Voice-capable modes (driven by mic + Whisper). Excludes non-voice modes
+    /// like `officeMode`, which uses a dedicated window instead of the recording HUD.
+    static var voiceModes: [Mode] { allCases.filter { $0.isVoiceMode } }
+
+    /// `true` when this mode is driven by microphone + Whisper. `false` for modes
+    /// with a different input surface (e.g. `officeMode` takes file-drop + text).
+    var isVoiceMode: Bool { self != .officeMode }
+
     var displayName: String {
         switch self {
-        case .normal:    return String(localized: "mode.normal.name", defaultValue: "Normal")
-        case .business:  return String(localized: "mode.business.name", defaultValue: "Business")
-        case .plus:      return String(localized: "mode.plus.name", defaultValue: "Plus")
-        case .rage:      return String(localized: "mode.rage.name", defaultValue: "Rage")
-        case .emoji:     return String(localized: "mode.emoji.name", defaultValue: "Emoji")
-        case .aiCommand: return String(localized: "mode.aiCommand.name", defaultValue: "Prompt")
+        case .normal:     return String(localized: "mode.normal.name", defaultValue: "Normal")
+        case .business:   return String(localized: "mode.business.name", defaultValue: "Business")
+        case .plus:       return String(localized: "mode.plus.name", defaultValue: "Plus")
+        case .rage:       return String(localized: "mode.rage.name", defaultValue: "Rage")
+        case .emoji:      return String(localized: "mode.emoji.name", defaultValue: "Emoji")
+        case .aiCommand:  return String(localized: "mode.aiCommand.name", defaultValue: "Prompt")
+        case .officeMode: return String(localized: "mode.officeMode.name", defaultValue: "Office")
         }
     }
 
     var tagline: String {
         switch self {
-        case .normal:    return String(localized: "mode.normal.tagline", defaultValue: "Sprache rein. Text raus.")
-        case .business:  return String(localized: "mode.business.tagline", defaultValue: "Sprache rein. Businesstauglich raus.")
-        case .plus:      return String(localized: "mode.plus.tagline", defaultValue: "Geschrieben sprechen.")
-        case .rage:      return String(localized: "mode.rage.tagline", defaultValue: "Frust rein. Entspannt raus.")
-        case .emoji:     return String(localized: "mode.emoji.tagline", defaultValue: "Sprache rein. Text mit Emojis raus.")
-        case .aiCommand: return String(localized: "mode.aiCommand.tagline", defaultValue: "Idee rein. Prompt raus.")
+        case .normal:     return String(localized: "mode.normal.tagline", defaultValue: "Sprache rein. Text raus.")
+        case .business:   return String(localized: "mode.business.tagline", defaultValue: "Sprache rein. Businesstauglich raus.")
+        case .plus:       return String(localized: "mode.plus.tagline", defaultValue: "Geschrieben sprechen.")
+        case .rage:       return String(localized: "mode.rage.tagline", defaultValue: "Frust rein. Entspannt raus.")
+        case .emoji:      return String(localized: "mode.emoji.tagline", defaultValue: "Sprache rein. Text mit Emojis raus.")
+        case .aiCommand:  return String(localized: "mode.aiCommand.tagline", defaultValue: "Idee rein. Prompt raus.")
+        case .officeMode: return String(localized: "mode.officeMode.tagline", defaultValue: "Datei rein. Zusammenfassung raus.")
         }
     }
 
     var symbolName: String {
         switch self {
-        case .normal:    return "mic.fill"
-        case .business:  return "briefcase.fill"
-        case .plus:      return "text.justify.left"
-        case .rage:      return "flame.fill"
-        case .emoji:     return "face.smiling"
-        case .aiCommand: return "wand.and.stars"
+        case .normal:     return "mic.fill"
+        case .business:   return "briefcase.fill"
+        case .plus:       return "text.justify.left"
+        case .rage:       return "flame.fill"
+        case .emoji:      return "face.smiling"
+        case .aiCommand:  return "wand.and.stars"
+        case .officeMode: return "doc.text.magnifyingglass"
         }
     }
 
@@ -52,6 +63,28 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
 
     private var defaultSystemPromptGerman: String {
         switch self {
+        case .officeMode:
+            return """
+            Du bekommst einen Text (entweder direkt getippt oder aus einer Datei geladen: Notiz, Protokoll, \
+            Mail, Log, CSV, Code-Snippet, Dokumentation). Deine Aufgabe: eine strukturierte, präzise \
+            Zusammenfassung für den Büro-Alltag.
+
+            Gib in dieser Reihenfolge aus:
+            1. Eine sehr kurze Einordnung in 1 Satz (was ist das Dokument).
+            2. Die Kernaussagen als knappe Stichpunkte (nur was wirklich drin steht, nichts erfinden).
+            3. Falls vorhanden: Entscheidungen, offene Punkte, nächste Schritte — je eigene Sektion, nur \
+               wenn im Text tatsächlich genannt.
+            4. Falls Zahlen/Daten/Deadlines/Namen im Text vorkommen: kurze Liste davon, unverändert.
+
+            Regeln:
+            - Keine Interpretation, keine Meinung, keine Empfehlungen die nicht im Text stehen.
+            - Keine Einleitung ("Hier ist …"), keine Abschlussfloskel.
+            - Nutze Markdown-Überschriften (##) und Stichpunkte (-).
+            - Wenn der Text sehr kurz oder trivial ist: entsprechend knapp zusammenfassen, nicht \
+              künstlich aufblasen.
+
+            Antworte ausschließlich mit der Zusammenfassung.
+            """
         case .normal:
             return ""
         case .business:
@@ -141,6 +174,26 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
 
     private var defaultSystemPromptEnglish: String {
         switch self {
+        case .officeMode:
+            return """
+            You receive a text (typed directly or loaded from a file: note, meeting minutes, email, log, \
+            CSV, code snippet, docs). Your job: produce a structured, precise summary for everyday office use.
+
+            Output in this order:
+            1. A very short one-sentence framing (what kind of document is this).
+            2. The key points as concise bullets (only what's actually in the text — don't invent anything).
+            3. If present: decisions, open items, next steps — each as its own section, only when \
+               actually called out in the text.
+            4. If the text contains numbers, dates, deadlines, or names: short list of those, unchanged.
+
+            Rules:
+            - No interpretation, no opinion, no recommendations that aren't in the text.
+            - No preamble ("Here is …"), no closing filler.
+            - Use markdown headings (##) and bullets (-).
+            - If the text is very short or trivial: summarize accordingly, don't pad.
+
+            Reply with the summary only.
+            """
         case .normal:
             return ""
         case .business:
