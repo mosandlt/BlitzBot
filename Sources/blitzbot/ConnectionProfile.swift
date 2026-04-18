@@ -50,17 +50,19 @@ struct ConnectionProfile: Codable, Identifiable, Hashable {
 
     static func defaultBaseURL(for provider: LLMProvider) -> String {
         switch provider {
-        case .anthropic: return "https://api.anthropic.com"
-        case .openai:    return "https://api.openai.com"
-        case .ollama:    return "http://localhost:11434"
+        case .anthropic:         return "https://api.anthropic.com"
+        case .openai:            return "https://api.openai.com"
+        case .ollama:            return "http://localhost:11434"
+        case .appleIntelligence: return ""   // on-device; no URL
         }
     }
 
     static func defaultAuthScheme(for provider: LLMProvider) -> AuthScheme {
         switch provider {
-        case .anthropic: return .apiKey
-        case .openai:    return .bearer
-        case .ollama:    return .none
+        case .anthropic:         return .apiKey
+        case .openai:            return .bearer
+        case .ollama:            return .none
+        case .appleIntelligence: return .none
         }
     }
 

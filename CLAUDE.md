@@ -277,6 +277,9 @@ Sources/blitzbot/
                               wirft `LLMError`
   OpenAIClient.swift       ← OpenAI-kompatibler API-Client (same error contract)
   OllamaClient.swift       ← Ollama lokaler LLM-Client (same error contract)
+  AppleIntelligenceClient.swift ← on-device `FoundationModels` LLM (macOS 26+, Availability-
+                                    gated). Kein HTTP, kein Key. Alle Calls hinter
+                                    `#if canImport(FoundationModels)` + `@available`
   ConnectionProfile.swift  ← Profile-Modell (provider, baseURL, authScheme, model, keychainSlot)
   ProfileStore.swift       ← @ObservedObject store — CRUD, UserDefaults-Persistenz, Keychain-I/O
   ProfileScanner.swift     ← scannt ~/.claude-profiles/, ~/.claude/settings.json auf importierbare Konfigs
@@ -345,13 +348,13 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.2.4 (Stand: 2026-04-18)
+- **Aktuelle Version**: v1.3.0 (Stand: 2026-04-18)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
 - **Keychain**: Open-Access-ACL (`SecAccessCreate` mit leerem trustedApps-Array). Kein Prompt, kein PW, kein „Immer erlauben" — weder beim ersten Start noch nach Rebuilds. Einmalige Migration beim ersten Launch via `KeychainPreWarmer` (UserDefaults-Flag `keychain.openACL.migrated.v2`).
 - **Bundle-ID**: `de.blitzbot.app`
 - **Keychain-Service**: `de.blitzbot.mac` — Accounts: `anthropic-api-key`, `openai-api-key`, `ollama-api-key` (Legacy) + pro Profile-Slot `profile-<uuid>` (neue Struktur seit v1.1.0)
-- **LLM-Architektur**: `LLMRouter` → aktives `ConnectionProfile` (Provider Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel). Umschaltbar in Settings → Profile per Quick-Switcher oder pro Office-Session.
+- **LLM-Architektur**: `LLMRouter` → aktives `ConnectionProfile` (Provider Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel / **Apple Intelligence on-device**). Umschaltbar in Settings → Profile per Quick-Switcher oder pro Office-Session.
 - **Privacy**: Standardmäßig **an** seit v1.2.2. Lokale Anonymisierung vor jedem LLM-Call, Reverse-Mapping im Response.
 - **iOS Sub-Projekt**: `blitzbot-ios/` (Scaffold, nicht released; Hold-to-Talk + Share Extension + Siri Shortcut)
   - Simulator: `./run-sim.sh` — baut + startet (SFSpeechRecognizer geht im Sim NICHT, nur auf echtem iPhone)
@@ -361,6 +364,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 | Version | Kernänderung |
 |---|---|
+| v1.3.0 | **Apple Intelligence als 4. Provider** (on-device via `FoundationModels`, macOS 26+, kein Key/URL). Live-Availability-Badge im Profile-Editor. Voll availability-gated — App baut + läuft weiter auf macOS 13+. |
 | v1.2.4 | Opus-4.7 per-Mode Effort-Hints (`output_config.effort`, nur bei `claude-opus-4-7`) + CLAUDE.md-Cleanup + Build-Cache-Hygiene (stray `.build/` aus Nextcloud raus). |
 | v1.2.3 | Privacy-Coverage erweitert: Postadressen, IBAN, Kreditkarten mit Luhn, MAC, IPv6 — alle lokal detektiert |
 | v1.2.2 | Privacy-Mode default ON, „Immer anonymisieren"-Term-Liste, System-Prompt-Hint rewritten, Session-Mapping in Settings, Menu-Bar-Shield |
@@ -389,5 +393,5 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 - Translate-Modus (Diktat in A, Output in B)
 - iOS-App testen + releasen (Scaffold existiert, nicht released)
 - Launch-at-Login Toggle via SMAppService
-- Apple Intelligence / `FoundationModels` als zusätzlicher on-device LLM-Provider (Kritik-Pass gemacht, Implementierung pending)
+- Apple Intelligence Quality-Vergleich gegen Claude Sonnet/Opus auf realen Diktaten (systematisch durch alle 6 LLM-Modi) — entscheidet, ob AFM für Business/Prompt gut genug ist oder nur für Plus/Emoji/Rage geeignet
 - Build-Cache-Hygiene: sicherstellen, dass `.build/` nie im Nextcloud-Ordner landet (Regel 1 in Workflow-Regeln)

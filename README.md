@@ -767,6 +767,16 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.3.0 (2026-04-18)
+
+- **Apple Intelligence as a fourth LLM provider** — on-device, no API key, no network, no per-call cost. Uses Apple's `FoundationModels` framework (macOS 26+, Apple Silicon, Apple Intelligence enabled in System Settings).
+  - New provider option in **Settings → Profile → New profile → Provider**. Pick *Apple Intelligence (on-device)*, give it a name, save — done. No URL, no auth, no key.
+  - Live availability badge in the profile editor tells you on the spot whether your Mac can run it: *Available*, *device not eligible*, *Apple Intelligence not enabled*, *model still downloading*, or *macOS too old*.
+  - Works for every polish mode that normally hits an LLM (Business / Plus / Rage / Emoji / Prompt / Office). Normal mode stays mic → Whisper → paste, unchanged.
+  - **Quality expectation**: the on-device model is roughly 3B parameters. Good for tone shifts and light rewrites (Plus, Emoji, Rage), noticeably weaker than Claude Sonnet / Opus for creative prompt generation (Mode 6). Pick the provider per profile and switch with one click when you want the stronger cloud models back.
+  - **Privacy win**: with an Apple-Intelligence profile active, your dictated text never leaves the Mac — not even as anonymized placeholders. The Privacy-Mode wrap is harmless but redundant for local providers.
+  - Fully availability-guarded: builds and runs on macOS 13+. Older systems see a clear "requires macOS 26" message in the profile editor and the provider simply isn't usable — rest of the app is unaffected.
+
 ### v1.2.4 (2026-04-18)
 
 - **Opus 4.7 per-mode effort hints**. When the active model is `claude-opus-4-7`, each mode now sends a matching `output_config.effort` value (low / medium / high / xhigh) so the model invests reasoning proportionally to the task: Plus/Emoji = low, Rage = medium, Business/Office = high, Prompt = xhigh. Threading goes through `LLMRouter` → `AnthropicClient` without affecting Sonnet/Haiku or other providers. No UI change — the hint is derived automatically from the mode.

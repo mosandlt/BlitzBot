@@ -344,17 +344,19 @@ private struct ProfileListPane: View {
 
     private func providerIcon(_ provider: LLMProvider) -> String {
         switch provider {
-        case .anthropic: return "cpu.fill"
-        case .openai:    return "brain.head.profile"
-        case .ollama:    return "macbook"
+        case .anthropic:         return "cpu.fill"
+        case .openai:            return "brain.head.profile"
+        case .ollama:            return "macbook"
+        case .appleIntelligence: return "apple.logo"
         }
     }
 
     private func providerColor(_ provider: LLMProvider) -> Color {
         switch provider {
-        case .anthropic: return .purple
-        case .openai:    return .green
-        case .ollama:    return .blue
+        case .anthropic:         return .purple
+        case .openai:            return .green
+        case .ollama:            return .blue
+        case .appleIntelligence: return .pink
         }
     }
 }
@@ -425,41 +427,48 @@ private struct ProfileEditor: View {
                     .onChange(of: provider) { newValue in
                         applyProviderDefaults(for: newValue)
                     }
-                    TextField("Base URL", text: $baseURL)
-                        .textFieldStyle(.roundedBorder)
-                    Picker("Authentifizierung", selection: $authScheme) {
-                        ForEach(AuthScheme.allCases) { s in
-                            Text(s.displayName).tag(s)
+                    if provider != .appleIntelligence {
+                        TextField("Base URL", text: $baseURL)
+                            .textFieldStyle(.roundedBorder)
+                        Picker("Authentifizierung", selection: $authScheme) {
+                            ForEach(AuthScheme.allCases) { s in
+                                Text(s.displayName).tag(s)
+                            }
                         }
                     }
                     if provider == .anthropic {
                         Toggle("Header `anthropic-version` mitsenden", isOn: $sendAnthropicVersion)
                     }
+                    if provider == .appleIntelligence {
+                        appleIntelligenceInfo
+                    }
                 }
 
-                Section("Geheimnis") {
-                    HStack {
-                        Group {
-                            if showSecret {
-                                TextField("API Key / Token", text: $secret)
-                            } else {
-                                SecureField("API Key / Token", text: $secret)
+                if provider != .appleIntelligence {
+                    Section("Geheimnis") {
+                        HStack {
+                            Group {
+                                if showSecret {
+                                    TextField("API Key / Token", text: $secret)
+                                } else {
+                                    SecureField("API Key / Token", text: $secret)
+                                }
                             }
+                            .textFieldStyle(.roundedBorder)
+                            Button {
+                                showSecret.toggle()
+                            } label: {
+                                Image(systemName: showSecret ? "eye.slash" : "eye")
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        .textFieldStyle(.roundedBorder)
-                        Button {
-                            showSecret.toggle()
-                        } label: {
-                            Image(systemName: showSecret ? "eye.slash" : "eye")
+                        if authScheme == .none {
+                            Text("Ohne Authentifizierung — Feld wird beim Speichern ignoriert.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("Wird nur in der macOS-Keychain gespeichert, nie als Klartext persistiert.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.borderless)
-                    }
-                    if authScheme == .none {
-                        Text("Ohne Authentifizierung — Feld wird beim Speichern ignoriert.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("Wird nur in der macOS-Keychain gespeichert, nie als Klartext persistiert.")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
 
@@ -550,9 +559,10 @@ private struct ProfileEditor: View {
 
     private var defaultModelPlaceholder: String {
         switch provider {
-        case .anthropic: return "claude-sonnet-4-5"
-        case .openai:    return "gpt-4o-mini"
-        case .ollama:    return "llama3.2:latest"
+        case .anthropic:         return "claude-sonnet-4-5"
+        case .openai:            return "gpt-4o-mini"
+        case .ollama:            return "llama3.2:latest"
+        case .appleIntelligence: return AppleIntelligenceClient.modelID
         }
     }
 
@@ -619,7 +629,77 @@ private struct ProfileEditor: View {
             Log.write("Profile save failed: \(error.localizedDescription)")
         }
     }
+
+    /// Info panel shown in the editor when Provider = Apple Intelligence.
+    /// Explains the on-device nature and — on macOS 26+ — the live
+    /// `SystemLanguageModel.default.availability` status.
+    @ViewBuilder private var appleIntelligenceInfo: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("On-device — kein Netzwerk, kein Key, kein Cost pro Call.",
+                  systemImage: "apple.logo")
+                .font(.caption)
+            Text("Läuft ausschließlich auf deinem Mac über Apple Intelligence (FoundationModels-Framework). Modellqualität ~3B-Klasse — stark für Rewrites und Ton-Wechsel, schwächer als Claude/GPT für kreatives Prompt-Generieren.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            appleIntelligenceAvailabilityBadge
+        }
+    }
+
+    @ViewBuilder private var appleIntelligenceAvailabilityBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: appleIntelligenceStatus.icon)
+                .foregroundStyle(appleIntelligenceStatus.color)
+            Text(appleIntelligenceStatus.label)
+                .font(.caption)
+                .foregroundStyle(appleIntelligenceStatus.color)
+        }
+    }
+
+    private var appleIntelligenceStatus: (icon: String, label: String, color: Color) {
+        if #available(macOS 26.0, *) {
+            #if canImport(FoundationModels)
+            return appleIntelligenceLiveStatus()
+            #else
+            return ("exclamationmark.triangle.fill",
+                    "Build ohne Apple-Intelligence-Support",
+                    .orange)
+            #endif
+        } else {
+            return ("exclamationmark.triangle.fill",
+                    "Erfordert macOS 26 oder neuer — aktuelles System ist zu alt.",
+                    .orange)
+        }
+    }
 }
+
+// MARK: - Apple Intelligence live availability probe (split out of the ViewBuilder
+// so the @available attribute can be applied cleanly).
+#if canImport(FoundationModels)
+import FoundationModels
+
+@available(macOS 26.0, *)
+private func appleIntelligenceLiveStatus() -> (icon: String, label: String, color: Color) {
+    switch SystemLanguageModel.default.availability {
+    case .available:
+        return ("checkmark.seal.fill", "Verfügbar auf diesem Mac.", .green)
+    case .unavailable(let reason):
+        let text: String
+        switch reason {
+        case .deviceNotEligible:
+            text = "Gerät nicht kompatibel (Apple Silicon + genug RAM nötig)."
+        case .appleIntelligenceNotEnabled:
+            text = "Apple Intelligence in Systemeinstellungen aktivieren."
+        case .modelNotReady:
+            text = "Modell lädt noch im Hintergrund."
+        @unknown default:
+            text = "Nicht verfügbar (unbekannter Grund)."
+        }
+        return ("exclamationmark.triangle.fill", text, .orange)
+    @unknown default:
+        return ("questionmark.circle.fill", "Unbekannter Status.", .secondary)
+    }
+}
+#endif
 
 // MARK: - Discovery pane
 

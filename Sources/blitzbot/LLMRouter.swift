@@ -115,7 +115,8 @@ enum LLMRouter {
         // for Anthropic/OpenAI profiles when the migration hasn't copied the secret yet
         // (e.g. first launch after upgrade or a failed Keychain rewrite).
         var secret = config.profileStore.secret(for: profile)
-        if (secret == nil || secret!.isEmpty) && profile.provider != .ollama {
+        let needsSecretFallback = profile.provider != .ollama && profile.provider != .appleIntelligence
+        if (secret == nil || secret!.isEmpty) && needsSecretFallback {
             switch profile.provider {
             case .anthropic:
                 if let legacyKey = KeychainStore.loadAPIKey(), !legacyKey.isEmpty {
@@ -130,7 +131,7 @@ enum LLMRouter {
                     secret = legacyKey
                     try? KeychainStore.saveKey(legacyKey, account: profile.keychainAccount)
                 }
-            case .ollama: break
+            case .ollama, .appleIntelligence: break
             }
         }
 
@@ -164,6 +165,10 @@ enum LLMRouter {
                                       model: model,
                                       apiKey: bearer)
             return try await client.rewrite(text: text, systemPrompt: systemPrompt)
+
+        case .appleIntelligence:
+            let client = AppleIntelligenceClient()
+            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
         }
     }
 
@@ -194,6 +199,12 @@ enum LLMRouter {
                                       model: config.ollamaModel,
                                       apiKey: KeychainStore.loadOllamaKey())
             return try await client.rewrite(text: text, systemPrompt: systemPrompt)
+
+        case .appleIntelligence:
+            // Legacy path (no connection profiles yet). Apple Intelligence has no
+            // per-provider legacy settings, so we just call the on-device client.
+            let client = AppleIntelligenceClient()
+            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
         }
     }
 
@@ -201,9 +212,10 @@ enum LLMRouter {
 
     private static func defaultModel(for provider: LLMProvider) -> String {
         switch provider {
-        case .anthropic: return "claude-sonnet-4-5"
-        case .openai:    return "gpt-4o-mini"
-        case .ollama:    return "llama3.2:latest"
+        case .anthropic:         return "claude-sonnet-4-5"
+        case .openai:            return "gpt-4o-mini"
+        case .ollama:            return "llama3.2:latest"
+        case .appleIntelligence: return AppleIntelligenceClient.modelID
         }
     }
 

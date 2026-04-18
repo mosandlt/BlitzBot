@@ -8,9 +8,10 @@ enum ModelDiscovery {
     /// Ollama ignores the secret unless `authScheme == .bearer`.
     static func list(profile: ConnectionProfile, secret: String?) async throws -> [String] {
         switch profile.provider {
-        case .anthropic: return try await fetchAnthropicStyle(profile: profile, secret: secret)
-        case .openai:    return try await fetchOpenAIStyle(profile: profile, secret: secret)
-        case .ollama:    return try await fetchOllamaStyle(profile: profile, secret: secret)
+        case .anthropic:         return try await fetchAnthropicStyle(profile: profile, secret: secret)
+        case .openai:            return try await fetchOpenAIStyle(profile: profile, secret: secret)
+        case .ollama:            return try await fetchOllamaStyle(profile: profile, secret: secret)
+        case .appleIntelligence: return [AppleIntelligenceClient.modelID]
         }
     }
 
