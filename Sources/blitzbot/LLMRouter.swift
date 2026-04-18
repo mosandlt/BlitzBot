@@ -14,9 +14,12 @@ enum LLMRouter {
         // Privacy wrap — when enabled AND the target provider leaves the Mac,
         // anonymize outgoing user text, append a hint to the system prompt so
         // the LLM doesn't treat placeholders as unfilled template slots, and
-        // de-anonymize the response. Skipped for local providers (Ollama,
-        // Apple Intelligence) where the data never leaves the machine anyway.
-        let provider = resolveProvider(config: config, override: nil)
+        // de-anonymize the response. Skipped for Ollama (local-only) where the
+        // data never leaves the machine — anonymizing on the way to a local
+        // model produces zero privacy benefit and measurably hurts output
+        // quality (camelCase identifiers like `meineFunktion` get misclassified
+        // as personal names by NLTagger).
+        let provider = config.profileStore.activeProfile?.provider ?? config.llmProvider
         let (preparedText, preparedPrompt, engine) = applyPrivacyIfEnabled(
             text: text, systemPrompt: systemPrompt, config: config, provider: provider
         )
@@ -35,31 +38,22 @@ enum LLMRouter {
 
     /// Profile-override path — used by the inline recovery flow to retry a failed
     /// request against a *different* profile than the currently active one, without
-    /// mutating `config.profileStore.activeProfileID`. Same privacy wrap as above.
+    /// mutating `config.profileStore.activeProfileID`. Same privacy wrap as above,
+    /// keyed on the override profile's provider.
     @MainActor
     static func rewrite(text: String,
                         systemPrompt: String,
                         config: AppConfig,
                         profileOverride: ConnectionProfile,
                         mode: Mode? = nil) async throws -> String {
-        let provider = resolveProvider(config: config, override: profileOverride)
         let (preparedText, preparedPrompt, engine) = applyPrivacyIfEnabled(
-            text: text, systemPrompt: systemPrompt, config: config, provider: provider
+            text: text, systemPrompt: systemPrompt, config: config,
+            provider: profileOverride.provider
         )
         let raw = try await rewriteWith(profile: profileOverride, config: config,
                                         text: preparedText, systemPrompt: preparedPrompt,
                                         mode: mode)
         return engine?.deanonymize(raw) ?? raw
-    }
-
-    /// Effective provider for a given call — used to decide whether the Privacy
-    /// wrap has any value (it's skipped for local providers).
-    @MainActor
-    private static func resolveProvider(config: AppConfig,
-                                        override: ConnectionProfile?) -> LLMProvider {
-        if let override { return override.provider }
-        if let active = config.profileStore.activeProfile { return active.provider }
-        return config.llmProvider
     }
 
     /// When Privacy Mode is on AND the target provider is cloud-bound:
@@ -69,11 +63,8 @@ enum LLMRouter {
     ///      template slots) and must be kept verbatim in its response — that way
     ///      our reverse pass can map them back to the originals.
     ///
-    /// When off, or when the provider runs locally (Ollama / Apple Intelligence),
-    /// returns the input unchanged and a nil engine so callers skip the reverse
-    /// wrap. Local providers see the raw text because it never leaves the machine
-    /// — anonymizing on the way to a local model would hurt output quality for
-    /// zero privacy benefit.
+    /// When off, or when the provider is local (Ollama), returns the input
+    /// unchanged and a nil engine so callers skip the reverse wrap.
     @MainActor
     private static func applyPrivacyIfEnabled(
         text: String,
@@ -82,8 +73,8 @@ enum LLMRouter {
         provider: LLMProvider
     ) -> (String, String, PrivacyEngine?) {
         guard config.privacyMode else { return (text, systemPrompt, nil) }
-        if provider.isLocal {
-            Log.write("Privacy: skipped (local provider: \(provider.rawValue))")
+        if provider == .ollama {
+            Log.write("Privacy: skipped (local provider: ollama)")
             return (text, systemPrompt, nil)
         }
         let engine = config.privacyEngine
@@ -137,8 +128,7 @@ enum LLMRouter {
         // for Anthropic/OpenAI profiles when the migration hasn't copied the secret yet
         // (e.g. first launch after upgrade or a failed Keychain rewrite).
         var secret = config.profileStore.secret(for: profile)
-        let needsSecretFallback = profile.provider != .ollama && profile.provider != .appleIntelligence
-        if (secret == nil || secret!.isEmpty) && needsSecretFallback {
+        if (secret == nil || secret!.isEmpty) && profile.provider != .ollama {
             switch profile.provider {
             case .anthropic:
                 if let legacyKey = KeychainStore.loadAPIKey(), !legacyKey.isEmpty {
@@ -153,7 +143,7 @@ enum LLMRouter {
                     secret = legacyKey
                     try? KeychainStore.saveKey(legacyKey, account: profile.keychainAccount)
                 }
-            case .ollama, .appleIntelligence: break
+            case .ollama: break
             }
         }
 
@@ -187,10 +177,6 @@ enum LLMRouter {
                                       model: model,
                                       apiKey: bearer)
             return try await client.rewrite(text: text, systemPrompt: systemPrompt)
-
-        case .appleIntelligence:
-            let client = AppleIntelligenceClient()
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
         }
     }
 
@@ -221,12 +207,6 @@ enum LLMRouter {
                                       model: config.ollamaModel,
                                       apiKey: KeychainStore.loadOllamaKey())
             return try await client.rewrite(text: text, systemPrompt: systemPrompt)
-
-        case .appleIntelligence:
-            // Legacy path (no connection profiles yet). Apple Intelligence has no
-            // per-provider legacy settings, so we just call the on-device client.
-            let client = AppleIntelligenceClient()
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
         }
     }
 
@@ -234,10 +214,9 @@ enum LLMRouter {
 
     private static func defaultModel(for provider: LLMProvider) -> String {
         switch provider {
-        case .anthropic:         return "claude-sonnet-4-5"
-        case .openai:            return "gpt-4o-mini"
-        case .ollama:            return "llama3.2:latest"
-        case .appleIntelligence: return AppleIntelligenceClient.modelID
+        case .anthropic: return "claude-sonnet-4-5"
+        case .openai:    return "gpt-4o-mini"
+        case .ollama:    return "llama3.2:latest"
         }
     }
 

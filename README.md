@@ -767,22 +767,16 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
-### v1.3.1 (2026-04-18)
+### v1.3.2 (2026-04-18)
 
-- **Privacy Mode auto-skips for local providers.** When the active profile uses Ollama or Apple Intelligence — i.e. the model runs on your Mac — the pre-send anonymizer now silently short-circuits. Raw text goes straight to the local model; the reverse-mapping step is bypassed too (nothing to reverse).
-  - **Why**: the anonymizer exists to prevent PII from leaving the machine. For a provider that by definition never leaves the machine, anonymizing is a no-op privacy-wise but can hurt output quality — especially for prompts with code identifiers (`meineFunktion`, `my_var`, `file.swift`) that `NLTagger` misclassifies as personal names.
-  - **UI unchanged**: your Privacy toggle keeps its state. The shield pill in the menu bar, HUD, and Office header still reflects whether Privacy is *armed*. Switch to a cloud profile (Anthropic / OpenAI / custom) and the wrap kicks in again automatically.
-  - **Log line** `Privacy: skipped (local provider: ollama)` (or `appleIntelligence`) appears in `~/.blitzbot/logs/blitzbot.log` so the bypass is observable if you're debugging.
-
-### v1.3.0 (2026-04-18)
-
-- **Apple Intelligence as a fourth LLM provider** — on-device, no API key, no network, no per-call cost. Uses Apple's `FoundationModels` framework (macOS 26+, Apple Silicon, Apple Intelligence enabled in System Settings).
-  - New provider option in **Settings → Profile → New profile → Provider**. Pick *Apple Intelligence (on-device)*, give it a name, save — done. No URL, no auth, no key.
-  - Live availability badge in the profile editor tells you on the spot whether your Mac can run it: *Available*, *device not eligible*, *Apple Intelligence not enabled*, *model still downloading*, or *macOS too old*.
-  - Works for every polish mode that normally hits an LLM (Business / Plus / Rage / Emoji / Prompt / Office). Normal mode stays mic → Whisper → paste, unchanged.
-  - **Quality expectation**: the on-device model is roughly 3B parameters. Good for tone shifts and light rewrites (Plus, Emoji, Rage), noticeably weaker than Claude Sonnet / Opus for creative prompt generation (Mode 6). Pick the provider per profile and switch with one click when you want the stronger cloud models back.
-  - **Privacy win**: with an Apple-Intelligence profile active, your dictated text never leaves the Mac — not even as anonymized placeholders. The Privacy-Mode wrap is harmless but redundant for local providers.
-  - Fully availability-guarded: builds and runs on macOS 13+. Older systems see a clear "requires macOS 26" message in the profile editor and the provider simply isn't usable — rest of the app is unaffected.
+- **Apple Intelligence integration removed.** v1.3.0 added it as a provider and v1.3.1 made the Privacy wrap skip it. Empirical testing with five real prompts across Plus / Business / Rage / Emoji / Prompt / Office showed the on-device ~3B foundation model fails every LLM-backed mode: it ignores the system prompt, hallucinates fluently on absurd inputs, and loops on repetitive output. The provider was a marketing bullet without user-visible benefit, so it's out.
+  - `AppleIntelligenceClient.swift` deleted, `LLMProvider.appleIntelligence` case removed, all UI surfaces (Profile editor, icon, color, availability badge, quality hint table) removed.
+  - **If you want a larger local model**: use Ollama (already supported since v1.0.7). `ollama pull qwen2.5:14b` (or `qwen2.5:32b` / `llama3.3:70b` if your Mac has the RAM) runs a real large model on-device with quality close to cloud options. Point a profile at `http://localhost:11434` and pick the model you pulled.
+  - If Apple ships a larger on-device model in a future macOS release and exposes it via `FoundationModels`, we'll reconsider.
+- **Privacy Mode auto-skips for Ollama** (the useful half of v1.3.1, kept). When the active profile's provider is Ollama, the pre-send anonymizer short-circuits: raw text goes straight to the local model, reverse-mapping step is bypassed. Skipping for Ollama is a pure win — no privacy loss (data stays on your Mac), better output quality (no over-anonymization of code identifiers like `meineFunktion`, `my_var`, `file.swift`).
+  - Log line `Privacy: skipped (local provider: ollama)` in `~/.blitzbot/logs/blitzbot.log` makes the bypass observable.
+  - UI toggle state unchanged — the shield pill still reflects whether Privacy is armed; it just no-ops for Ollama requests.
+- **Migration**: if you had a v1.3.0 Apple-Intelligence profile saved, it stays in UserDefaults but is no longer selectable in the provider picker. Delete it manually in **Settings → Profile**. Nothing else changes.
 
 ### v1.2.4 (2026-04-18)
 

@@ -65,10 +65,9 @@ struct MenuBarView: View {
 
     private var providerKeyWarning: String? {
         switch config.llmProvider {
-        case .anthropic:         return config.hasAPIKey ? nil : "Kein Anthropic API-Key"
-        case .openai:            return config.hasOpenAIKey ? nil : "Kein OpenAI API-Key"
-        case .ollama:            return nil  // Ollama is local, no key required
-        case .appleIntelligence: return nil  // on-device, no key required
+        case .anthropic: return config.hasAPIKey ? nil : "Kein Anthropic API-Key"
+        case .openai:    return config.hasOpenAIKey ? nil : "Kein OpenAI API-Key"
+        case .ollama:    return nil  // Ollama is local, no key required
         }
     }
 

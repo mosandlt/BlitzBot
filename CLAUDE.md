@@ -348,13 +348,13 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.3.1 (Stand: 2026-04-18)
+- **Aktuelle Version**: v1.3.2 (Stand: 2026-04-18)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
 - **Keychain**: Open-Access-ACL (`SecAccessCreate` mit leerem trustedApps-Array). Kein Prompt, kein PW, kein „Immer erlauben" — weder beim ersten Start noch nach Rebuilds. Einmalige Migration beim ersten Launch via `KeychainPreWarmer` (UserDefaults-Flag `keychain.openACL.migrated.v2`).
 - **Bundle-ID**: `de.blitzbot.app`
 - **Keychain-Service**: `de.blitzbot.mac` — Accounts: `anthropic-api-key`, `openai-api-key`, `ollama-api-key` (Legacy) + pro Profile-Slot `profile-<uuid>` (neue Struktur seit v1.1.0)
-- **LLM-Architektur**: `LLMRouter` → aktives `ConnectionProfile` (Provider Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel / **Apple Intelligence on-device**). Umschaltbar in Settings → Profile per Quick-Switcher oder pro Office-Session.
+- **LLM-Architektur**: `LLMRouter` → aktives `ConnectionProfile` (Provider Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel). Umschaltbar in Settings → Profile per Quick-Switcher oder pro Office-Session. Apple Intelligence war in v1.3.0/1.3.1 integriert, in v1.3.2 entfernt — 3B-Modell empirisch unbrauchbar für alle LLM-Modi. Für lokale größere Modelle: Ollama mit Qwen/Llama/Mistral 14B+.
 - **Privacy**: Standardmäßig **an** seit v1.2.2. Lokale Anonymisierung vor jedem LLM-Call, Reverse-Mapping im Response.
 - **iOS Sub-Projekt**: `blitzbot-ios/` (Scaffold, nicht released; Hold-to-Talk + Share Extension + Siri Shortcut)
   - Simulator: `./run-sim.sh` — baut + startet (SFSpeechRecognizer geht im Sim NICHT, nur auf echtem iPhone)
@@ -364,8 +364,9 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 | Version | Kernänderung |
 |---|---|
-| v1.3.1 | Privacy-Mode wird bei lokalen Providern (Ollama, Apple Intelligence) automatisch übersprungen — Rohtext geht direkt zum on-device Modell (keine Over-Anonymisierung bei Code-Identifiern). UI-Toggle bleibt unverändert. |
-| v1.3.0 | **Apple Intelligence als 4. Provider** (on-device via `FoundationModels`, macOS 26+, kein Key/URL). Live-Availability-Badge im Profile-Editor. Voll availability-gated — App baut + läuft weiter auf macOS 13+. |
+| v1.3.2 | **Apple Intelligence wieder raus**. v1.3.0/v1.3.1-Integration komplett entfernt nach Live-Tests: 3B-Modell halluziniert/ignoriert System-Prompt in allen LLM-Modi. Privacy-Skip für Ollama bleibt (nützlich, unabhängig). Für lokale größere Modelle → Ollama + Qwen/Llama 14B+. |
+| v1.3.1 | Privacy-Mode wird bei lokalen Providern (Ollama, Apple Intelligence) automatisch übersprungen — Rohtext geht direkt zum on-device Modell. **Superseded durch v1.3.2**: Ollama-Skip bleibt, Apple-Intelligence-Teil ist obsolet. |
+| v1.3.0 | **Apple Intelligence als 4. Provider** (on-device via `FoundationModels`, macOS 26+, kein Key/URL). **Superseded durch v1.3.2 — Integration entfernt**: 3B-Modell empirisch unbrauchbar für LLM-Modi (Hallucinations, ignoriert Prompt, Loops). |
 | v1.2.4 | Opus-4.7 per-Mode Effort-Hints (`output_config.effort`, nur bei `claude-opus-4-7`) + CLAUDE.md-Cleanup + Build-Cache-Hygiene (stray `.build/` aus Nextcloud raus). |
 | v1.2.3 | Privacy-Coverage erweitert: Postadressen, IBAN, Kreditkarten mit Luhn, MAC, IPv6 — alle lokal detektiert |
 | v1.2.2 | Privacy-Mode default ON, „Immer anonymisieren"-Term-Liste, System-Prompt-Hint rewritten, Session-Mapping in Settings, Menu-Bar-Shield |
@@ -394,5 +395,5 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 - Translate-Modus (Diktat in A, Output in B)
 - iOS-App testen + releasen (Scaffold existiert, nicht released)
 - Launch-at-Login Toggle via SMAppService
-- Apple Intelligence Quality-Vergleich gegen Claude Sonnet/Opus auf realen Diktaten (systematisch durch alle 6 LLM-Modi) — entscheidet, ob AFM für Business/Prompt gut genug ist oder nur für Plus/Emoji/Rage geeignet
+- Apple Intelligence re-evaluieren falls Apple in zukünftigen macOS-Versionen ein deutlich größeres on-device Modell freigibt (aktuell: 3B, per v1.3.2 als unbrauchbar abgeschlossen)
 - Build-Cache-Hygiene: sicherstellen, dass `.build/` nie im Nextcloud-Ordner landet (Regel 1 in Workflow-Regeln)

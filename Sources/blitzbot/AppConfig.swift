@@ -41,25 +41,15 @@ struct PendingOfficeContent: Equatable {
 }
 
 enum LLMProvider: String, CaseIterable, Identifiable, Codable {
-    case anthropic, openai, ollama, appleIntelligence
+    case anthropic, openai, ollama
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .anthropic:         return "Anthropic Claude"
-        case .openai:            return "OpenAI ChatGPT"
-        case .ollama:            return "Ollama (lokal)"
-        case .appleIntelligence: return "Apple Intelligence (on-device)"
-        }
-    }
-
-    /// `true` for providers that run entirely on the user's Mac — no network,
-    /// no per-call cost, and the outbound-privacy wrap becomes a no-op.
-    var isLocal: Bool {
-        switch self {
-        case .anthropic, .openai: return false
-        case .ollama, .appleIntelligence: return true
+        case .anthropic: return "Anthropic Claude"
+        case .openai:    return "OpenAI ChatGPT"
+        case .ollama:    return "Ollama (lokal)"
         }
     }
 }

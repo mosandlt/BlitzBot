@@ -285,10 +285,9 @@ struct OfficeView: View {
 
     private func defaultModelHint(for provider: LLMProvider) -> String {
         switch provider {
-        case .anthropic:         return "claude-sonnet-4-5"
-        case .openai:            return "gpt-4o-mini"
-        case .ollama:            return "llama3.2:latest"
-        case .appleIntelligence: return AppleIntelligenceClient.modelID
+        case .anthropic: return "claude-sonnet-4-5"
+        case .openai:    return "gpt-4o-mini"
+        case .ollama:    return "llama3.2:latest"
         }
     }
 
