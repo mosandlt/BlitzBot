@@ -350,11 +350,13 @@ final class ModeProcessor: ObservableObject {
                     output = try await LLMRouter.rewrite(text: raw,
                                                          systemPrompt: prompt,
                                                          config: config,
-                                                         profileOverride: override)
+                                                         profileOverride: override,
+                                                         mode: mode)
                 } else {
                     output = try await LLMRouter.rewrite(text: raw,
                                                          systemPrompt: prompt,
-                                                         config: config)
+                                                         config: config,
+                                                         mode: mode)
                 }
             } catch {
                 let providerLabel = profileOverride?.name

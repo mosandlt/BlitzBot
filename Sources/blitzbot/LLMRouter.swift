@@ -9,7 +9,8 @@ enum LLMRouter {
     @MainActor
     static func rewrite(text: String,
                         systemPrompt: String,
-                        config: AppConfig) async throws -> String {
+                        config: AppConfig,
+                        mode: Mode? = nil) async throws -> String {
         // Privacy wrap — when enabled, anonymize outgoing user text, append a
         // hint to the system prompt so the LLM doesn't treat placeholders as
         // unfilled template slots, and de-anonymize the response.
@@ -19,10 +20,12 @@ enum LLMRouter {
         let raw: String
         if let profile = config.profileStore.activeProfile {
             raw = try await rewriteWith(profile: profile, config: config,
-                                        text: preparedText, systemPrompt: preparedPrompt)
+                                        text: preparedText, systemPrompt: preparedPrompt,
+                                        mode: mode)
         } else {
             raw = try await rewriteLegacy(config: config,
-                                          text: preparedText, systemPrompt: preparedPrompt)
+                                          text: preparedText, systemPrompt: preparedPrompt,
+                                          mode: mode)
         }
         return engine?.deanonymize(raw) ?? raw
     }
@@ -34,12 +37,14 @@ enum LLMRouter {
     static func rewrite(text: String,
                         systemPrompt: String,
                         config: AppConfig,
-                        profileOverride: ConnectionProfile) async throws -> String {
+                        profileOverride: ConnectionProfile,
+                        mode: Mode? = nil) async throws -> String {
         let (preparedText, preparedPrompt, engine) = applyPrivacyIfEnabled(
             text: text, systemPrompt: systemPrompt, config: config
         )
         let raw = try await rewriteWith(profile: profileOverride, config: config,
-                                        text: preparedText, systemPrompt: preparedPrompt)
+                                        text: preparedText, systemPrompt: preparedPrompt,
+                                        mode: mode)
         return engine?.deanonymize(raw) ?? raw
     }
 
@@ -104,7 +109,8 @@ enum LLMRouter {
     private static func rewriteWith(profile: ConnectionProfile,
                                     config: AppConfig,
                                     text: String,
-                                    systemPrompt: String) async throws -> String {
+                                    systemPrompt: String,
+                                    mode: Mode?) async throws -> String {
         // Prefer the profile-specific secret; fall back to the legacy per-provider key
         // for Anthropic/OpenAI profiles when the migration hasn't copied the secret yet
         // (e.g. first launch after upgrade or a failed Keychain rewrite).
@@ -140,7 +146,7 @@ enum LLMRouter {
                                          baseURL: profile.baseURL,
                                          authScheme: profile.authScheme,
                                          sendAnthropicVersion: profile.sendAnthropicVersion)
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
+            return try await client.rewrite(text: text, systemPrompt: systemPrompt, mode: mode)
 
         case .openai:
             guard let key = secret, !key.isEmpty else {
@@ -166,14 +172,15 @@ enum LLMRouter {
     @MainActor
     private static func rewriteLegacy(config: AppConfig,
                                       text: String,
-                                      systemPrompt: String) async throws -> String {
+                                      systemPrompt: String,
+                                      mode: Mode?) async throws -> String {
         switch config.llmProvider {
         case .anthropic:
             guard let apiKey = KeychainStore.loadAPIKey(), !apiKey.isEmpty else {
                 throw error("Kein Anthropic API Key")
             }
             let client = AnthropicClient(apiKey: apiKey, model: config.model)
-            return try await client.rewrite(text: text, systemPrompt: systemPrompt)
+            return try await client.rewrite(text: text, systemPrompt: systemPrompt, mode: mode)
 
         case .openai:
             guard let apiKey = KeychainStore.loadOpenAIKey(), !apiKey.isEmpty else {

@@ -767,6 +767,12 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.2.4 (2026-04-18)
+
+- **Opus 4.7 per-mode effort hints**. When the active model is `claude-opus-4-7`, each mode now sends a matching `output_config.effort` value (low / medium / high / xhigh) so the model invests reasoning proportionally to the task: Plus/Emoji = low, Rage = medium, Business/Office = high, Prompt = xhigh. Threading goes through `LLMRouter` → `AnthropicClient` without affecting Sonnet/Haiku or other providers. No UI change — the hint is derived automatically from the mode.
+- **Docs cleanup**: `CLAUDE.md` refreshed — stale version pin replaced (was still v1.1.0), mode list extended to the 7th (Office), file overview synced with the full current Swift layout (adds `LLMRouter`, `LLMError`, `ConnectionProfile`, `ProfileStore`, `ProfileScanner`, `ModelDiscovery`, `OpenAIClient`, `OllamaClient`, `PrivacyEngine`, `OfficeView`, `ProfilesView`, `KeychainPreWarmer`), architecture diagram now shows the Privacy-wrap + inline-recovery branch, Settings-Tab count corrected (7 not 6), stale `LSUIElement=YES` claim replaced with the correct *activation-policy-set-programmatically* behavior. Release history in `CLAUDE.md` brought up to date with v1.2.0–v1.2.3.
+- **Build-cache hygiene**: removed stray `.build/` + old v1.0.0 release zip that had accumulated inside the Nextcloud-synced project folder (rule from `CLAUDE.md` §1).
+
 ### v1.2.3 (2026-04-17)
 
 - **Expanded PII coverage.** Privacy Mode now additionally detects and anonymizes:

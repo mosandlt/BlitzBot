@@ -37,6 +37,20 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Effort hint for Opus 4.7's `output_config.effort` parameter.
+    /// Only sent when the active model is `claude-opus-4-7`.
+    var opusEffort: String {
+        switch self {
+        case .normal:     return "low"     // no LLM call, value unused
+        case .emoji:      return "low"     // literal insertion, minimal reasoning
+        case .plus:       return "low"     // light cleanup, not complex
+        case .rage:       return "medium"  // tone-shift with nuance
+        case .business:   return "high"    // structure + style judgment
+        case .officeMode: return "high"    // document analysis
+        case .aiCommand:  return "xhigh"   // most complex: intent inference + prompt writing
+        }
+    }
+
     var symbolName: String {
         switch self {
         case .normal:     return "mic.fill"

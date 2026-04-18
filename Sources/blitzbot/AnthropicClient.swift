@@ -25,7 +25,7 @@ struct AnthropicClient {
         return s
     }
 
-    func rewrite(text: String, systemPrompt: String) async throws -> String {
+    func rewrite(text: String, systemPrompt: String, mode: Mode? = nil) async throws -> String {
         guard !systemPrompt.isEmpty else { return text }
 
         guard let url = URL(string: "\(baseURL)/v1/messages") else {
@@ -44,12 +44,15 @@ struct AnthropicClient {
         }
         request.timeoutInterval = 120
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "max_tokens": 2048,
             "system": systemPrompt,
             "messages": [["role": "user", "content": text]]
         ]
+        if model == "claude-opus-4-7", let effort = mode?.opusEffort {
+            body["output_config"] = ["effort": effort]
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let data: Data
