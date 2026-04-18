@@ -348,7 +348,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.3.0 (Stand: 2026-04-18)
+- **Aktuelle Version**: v1.3.1 (Stand: 2026-04-18)
 - **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
 - **Keychain**: Open-Access-ACL (`SecAccessCreate` mit leerem trustedApps-Array). Kein Prompt, kein PW, kein „Immer erlauben" — weder beim ersten Start noch nach Rebuilds. Einmalige Migration beim ersten Launch via `KeychainPreWarmer` (UserDefaults-Flag `keychain.openACL.migrated.v2`).
@@ -364,6 +364,7 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 
 | Version | Kernänderung |
 |---|---|
+| v1.3.1 | Privacy-Mode wird bei lokalen Providern (Ollama, Apple Intelligence) automatisch übersprungen — Rohtext geht direkt zum on-device Modell (keine Over-Anonymisierung bei Code-Identifiern). UI-Toggle bleibt unverändert. |
 | v1.3.0 | **Apple Intelligence als 4. Provider** (on-device via `FoundationModels`, macOS 26+, kein Key/URL). Live-Availability-Badge im Profile-Editor. Voll availability-gated — App baut + läuft weiter auf macOS 13+. |
 | v1.2.4 | Opus-4.7 per-Mode Effort-Hints (`output_config.effort`, nur bei `claude-opus-4-7`) + CLAUDE.md-Cleanup + Build-Cache-Hygiene (stray `.build/` aus Nextcloud raus). |
 | v1.2.3 | Privacy-Coverage erweitert: Postadressen, IBAN, Kreditkarten mit Luhn, MAC, IPv6 — alle lokal detektiert |

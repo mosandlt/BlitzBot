@@ -767,6 +767,13 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.3.1 (2026-04-18)
+
+- **Privacy Mode auto-skips for local providers.** When the active profile uses Ollama or Apple Intelligence — i.e. the model runs on your Mac — the pre-send anonymizer now silently short-circuits. Raw text goes straight to the local model; the reverse-mapping step is bypassed too (nothing to reverse).
+  - **Why**: the anonymizer exists to prevent PII from leaving the machine. For a provider that by definition never leaves the machine, anonymizing is a no-op privacy-wise but can hurt output quality — especially for prompts with code identifiers (`meineFunktion`, `my_var`, `file.swift`) that `NLTagger` misclassifies as personal names.
+  - **UI unchanged**: your Privacy toggle keeps its state. The shield pill in the menu bar, HUD, and Office header still reflects whether Privacy is *armed*. Switch to a cloud profile (Anthropic / OpenAI / custom) and the wrap kicks in again automatically.
+  - **Log line** `Privacy: skipped (local provider: ollama)` (or `appleIntelligence`) appears in `~/.blitzbot/logs/blitzbot.log` so the bypass is observable if you're debugging.
+
 ### v1.3.0 (2026-04-18)
 
 - **Apple Intelligence as a fourth LLM provider** — on-device, no API key, no network, no per-call cost. Uses Apple's `FoundationModels` framework (macOS 26+, Apple Silicon, Apple Intelligence enabled in System Settings).

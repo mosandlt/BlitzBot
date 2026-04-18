@@ -11,11 +11,14 @@ enum LLMRouter {
                         systemPrompt: String,
                         config: AppConfig,
                         mode: Mode? = nil) async throws -> String {
-        // Privacy wrap — when enabled, anonymize outgoing user text, append a
-        // hint to the system prompt so the LLM doesn't treat placeholders as
-        // unfilled template slots, and de-anonymize the response.
+        // Privacy wrap — when enabled AND the target provider leaves the Mac,
+        // anonymize outgoing user text, append a hint to the system prompt so
+        // the LLM doesn't treat placeholders as unfilled template slots, and
+        // de-anonymize the response. Skipped for local providers (Ollama,
+        // Apple Intelligence) where the data never leaves the machine anyway.
+        let provider = resolveProvider(config: config, override: nil)
         let (preparedText, preparedPrompt, engine) = applyPrivacyIfEnabled(
-            text: text, systemPrompt: systemPrompt, config: config
+            text: text, systemPrompt: systemPrompt, config: config, provider: provider
         )
         let raw: String
         if let profile = config.profileStore.activeProfile {
@@ -39,8 +42,9 @@ enum LLMRouter {
                         config: AppConfig,
                         profileOverride: ConnectionProfile,
                         mode: Mode? = nil) async throws -> String {
+        let provider = resolveProvider(config: config, override: profileOverride)
         let (preparedText, preparedPrompt, engine) = applyPrivacyIfEnabled(
-            text: text, systemPrompt: systemPrompt, config: config
+            text: text, systemPrompt: systemPrompt, config: config, provider: provider
         )
         let raw = try await rewriteWith(profile: profileOverride, config: config,
                                         text: preparedText, systemPrompt: preparedPrompt,
@@ -48,22 +52,40 @@ enum LLMRouter {
         return engine?.deanonymize(raw) ?? raw
     }
 
-    /// When Privacy Mode is on:
+    /// Effective provider for a given call — used to decide whether the Privacy
+    /// wrap has any value (it's skipped for local providers).
+    @MainActor
+    private static func resolveProvider(config: AppConfig,
+                                        override: ConnectionProfile?) -> LLMProvider {
+        if let override { return override.provider }
+        if let active = config.profileStore.activeProfile { return active.provider }
+        return config.llmProvider
+    }
+
+    /// When Privacy Mode is on AND the target provider is cloud-bound:
     ///   1. Anonymize the user text via `PrivacyEngine`.
     ///   2. Append a short bilingual hint to the system prompt so the LLM knows
     ///      the `[NAME_1]`-style tokens are *real* entities (not unfilled
     ///      template slots) and must be kept verbatim in its response — that way
     ///      our reverse pass can map them back to the originals.
     ///
-    /// When off, returns the input unchanged and a nil engine so callers skip
-    /// the reverse wrap.
+    /// When off, or when the provider runs locally (Ollama / Apple Intelligence),
+    /// returns the input unchanged and a nil engine so callers skip the reverse
+    /// wrap. Local providers see the raw text because it never leaves the machine
+    /// — anonymizing on the way to a local model would hurt output quality for
+    /// zero privacy benefit.
     @MainActor
     private static func applyPrivacyIfEnabled(
         text: String,
         systemPrompt: String,
-        config: AppConfig
+        config: AppConfig,
+        provider: LLMProvider
     ) -> (String, String, PrivacyEngine?) {
         guard config.privacyMode else { return (text, systemPrompt, nil) }
+        if provider.isLocal {
+            Log.write("Privacy: skipped (local provider: \(provider.rawValue))")
+            return (text, systemPrompt, nil)
+        }
         let engine = config.privacyEngine
         let anonText = engine.anonymize(text)
         let hint = privacyPromptHint
