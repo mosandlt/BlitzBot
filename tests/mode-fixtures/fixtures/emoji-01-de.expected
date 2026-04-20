@@ -1,0 +1,5 @@
+no-preamble
+no-markdown-headings
+contains: release
+max-emojis: 5
+max-length: 300

@@ -2,153 +2,60 @@
 
 Lokale Speech-to-Text-App für macOS — diktieren statt tippen, systemweit in jede App einfügen.
 
-**Inspiration**: Video *"Nie wieder Tippen! Meine eigene Speech-to-Text App (Claude Code)"* von Christoph Magnussen — https://www.youtube.com/watch?v=vVTl1dqPL0k
+**Inspiration**: Video *"Nie wieder Tippen! Meine eigene Speech-to-Text App (Claude Code)"* von Christoph Magnussen — https://www.youtube.com/watch?v=vVTl1dqPL0k. **Ziel**: eigene Variante bauen, nicht den Code kopieren.
 
-**Ziel**: eigene Variante bauen, nicht den Code kopieren.
+Release-Historie: `docs/CHANGELOG.md`. Workflow-Details ausgelagert in `.claude/skills/{build-deploy,dev-cert-regen,pre-push-scan}/SKILL.md`.
 
 ---
 
-## Wie wir hier arbeiten (Claude, das hier zuerst lesen)
+## Wie wir hier arbeiten
 
-### Zwei-Prompt-Regel — **niemals überspringen**
+### Zwei-Prompt-Regel — niemals überspringen
 
-Bevor du für ein neues Feature Code schreibst, läuft immer erst der **Kritik-Pass**. Das ist der wichtigste Punkt in dieser Datei.
+Bevor für ein neues Feature Code geschrieben wird, läuft immer erst der **Kritik-Pass**. Wichtigster Punkt in dieser Datei.
 
 **Prompt 1 — Kritische Voranalyse** (erzeugt *keinen* Code, nur Risiko-Map):
 
-> Bevor du Code erzeugst, agiere als Product Engineer für macOS und prüfe dieses Vorhaben kritisch.
+> Agiere als Product Engineer für macOS und prüfe dieses Vorhaben kritisch.
 >
 > **Vorhaben:** [Feature-Beschreibung]
 >
-> **Deine Aufgabe:**
-> - Zerlege das Vorhaben in technische Teilprobleme
-> - Nenne die 10 größten Risiken für einen alltagstauglichen MVP
-> - Erkläre insbesondere, welche macOS-Berechtigungen und Systemgrenzen relevant sind
-> - Unterscheide klar zwischen:
->   1. sicher machbar im MVP
->   2. wahrscheinlich machbar mit Edge Cases
->   3. riskant oder app-übergreifend unzuverlässig
-> - Schlage danach eine konkrete MVP-Architektur vor
-> - Empfiehl, welche Teile du zuerst prototypen solltest
->
-> **Wichtig:** Schreibe für ein nicht-technisches Gründerteam. Keine unnötige Fachsprache. Klare Entscheidungen statt allgemeiner MVP-Phrasen.
+> Zerlege das Vorhaben in technische Teilprobleme. Nenne die 10 größten Risiken für einen alltagstauglichen MVP. Erkläre, welche macOS-Berechtigungen und Systemgrenzen relevant sind. Unterscheide klar: (1) sicher machbar im MVP, (2) wahrscheinlich machbar mit Edge Cases, (3) riskant oder app-übergreifend unzuverlässig. Schlage eine konkrete MVP-Architektur vor und empfiehl, welche Teile zuerst prototypen. Schreibe für ein nicht-technisches Gründerteam: klare Entscheidungen statt MVP-Phrasen.
 
-**Prompt 2 — Implementierung** (erst nach Prompt-1-Ergebnis):
+**Prompt 2 — Implementierung**: Feature mit Erkenntnissen aus Prompt 1 präzisieren, dann in Auto Mode umsetzen, Subagents parallel für Architektur-/Backend-Scan + Implementation, nach Deploy Codex als Zweitmeinung.
 
-1. Feature-Idee mit Erkenntnissen aus Prompt 1 präzisieren
-2. In Claude Code Auto Mode einsetzen
-3. Subagents parallel launchen (Architektur-Scan, Backend-Scan, Implementation)
-4. Nach Deploy: Codex als Code-Review-Zweitmeinung
+### Auto Mode + Codex
 
-### Auto Mode
-
-- Bevorzugt gegenüber Plan Mode (der ist laut Video zu träge)
-- Aktivieren: `Shift+Tab` bis unten `auto mode on` erscheint, oder Start mit `claude --mode=auto`
-- **Empfohlenes Setup: Opus 4.7 (1M context) + high effort**
-
-### Allowlist
-
-`.claude/settings.json` pflegen. Auf die Allowlist dürfen: `swift build`, `xcodebuild`, `git status`, `git diff`, Lese-Commands. **Nicht** auf die Allowlist: `rm`, `git push --force`, `brew install -g`, `sudo`, destruktive Git-Operationen.
-
-### Codex-Zweitmeinung
-
-Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Codex sagt "pass auf, vielleicht drei Schritte zurück". Für Architektur-Entscheidungen und Review nutzen.
+- Auto Mode aktivieren via `Shift+Tab` oder `claude --mode=auto`. Empfohlenes Setup: **Opus 4.7 (1M context) + high effort**.
+- Codex läuft als Plugin. Für Architektur-Entscheidungen und Review als Zweitmeinung nutzen — Claude ist opinionated, Codex bremst.
 
 ---
 
 ## Workflow-Regeln (gelernte Praxis)
 
-1. **Build-Zyklus — Build-Artefakte gehören nach `~/Downloads/blitzbot-build/`, NIE ins Projekt**:
-   ```
-   ./build-app.sh                    # baut komplett nach ~/Downloads/blitzbot-build/blitzbot.app
-   open ~/Downloads/blitzbot-build/blitzbot.app
-   ```
-   **Grund**: Projekt liegt in Nextcloud. `.build/` wird mehrere 100 MB groß → würde die Synchronisation blockieren, Diffs ersticken, Batterie belasten.
-   - `swift build --scratch-path "$HOME/Downloads/blitzbot-build/swift"` ist der Kern
-   - Die .app wird aus dem committeten Template (`blitzbot.app/Contents/Info.plist` + `Resources/`) neu zusammengebaut, Binary aus dem Scratch-Path
-   - Niemals `swift build` ohne `--scratch-path` aus dem Projekt laufen lassen, sonst landet `.build/` wieder im Nextcloud-Ordner
-   - Binary ersetzen ohne re-codesign = gebrochene Signatur
+1. **Build-Artefakte gehören nach `~/Downloads/blitzbot-build/`, NIE ins Projekt.** Projekt liegt in Nextcloud — `.build/` im Projekt würde Sync blockieren. Kern: `swift build --scratch-path "$HOME/Downloads/blitzbot-build/swift"`. Niemals `swift build` ohne `--scratch-path`. Kompletter Build+Deploy-Flow im Skill `build-deploy`. **Nach jedem Build** Dev-App nach `/Applications` deployen und starten, Log-Verifikation auf `Delegate init` + `applicationDidFinishLaunching` + `CGEventTap installed` (Hotkey-System up).
 
-   **Nach jedem Build Dev-App in `/Applications` aktualisieren UND starten**, damit der User sofort die Änderung sieht — nicht nur den Downloads-Build:
-   ```
-   pkill -f "/Applications/blitzbot.app" 2>/dev/null
-   ./build-app.sh --sign blitzbot-dev
-   ditto ~/Downloads/blitzbot-build/blitzbot.app /Applications/blitzbot.app
-   codesign --force --deep --sign blitzbot-dev /Applications/blitzbot.app
-   touch /Applications/blitzbot.app    # LaunchServices refresh
-   open /Applications/blitzbot.app
-   ```
-   Dann im Log prüfen (`~/.blitzbot/logs/blitzbot.log`), dass `applicationDidFinishLaunching` + `Hotkeys registered` erscheinen.
+2. **Code-Signing: immer `--sign blitzbot-dev`, nie ad-hoc (`--sign -`).** Ad-hoc invalidiert bei jedem Re-Sign TCC-Permissions (Accessibility, Input Monitoring) und Keychain-ACL. Mit dem stabilen Dev-Cert überleben Permissions alle Rebuilds. Falls Cert fehlt (`security find-identity -p codesigning -v` zeigt 0): Skill `dev-cert-regen`.
 
-   **WICHTIG: immer `--sign blitzbot-dev`, NIE wieder ad-hoc (`--sign -`).** Das selbst-signierte Dev-Cert `blitzbot-dev` liegt in der Login-Keychain (mit Codesign-Trust gesetzt). Ad-hoc Signing invalidiert bei jedem Re-Sign die TCC-Permissions (Accessibility, Input Monitoring) UND die Keychain-ACL (Anthropic-API-Key). Der User muss dann jedes Mal alles neu bestätigen. Mit dem stabilen Cert überleben diese Permissions alle Rebuilds.
+3. **Logging**: Nie `print()` oder `FileHandle.standardError`. **Immer `Log.write(...)`** aus `Log.swift` → `~/.blitzbot/logs/blitzbot.log` (per `tail -f` beobachtbar, überlebt Neustart).
 
-   Falls das Cert mal nicht da ist (`security find-identity -p codesigning -v` zeigt 0): neu erstellen via
-   ```
-   openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 3650 -nodes \
-     -subj "/CN=blitzbot-dev" -addext "extendedKeyUsage=critical,codeSigning"
-   openssl pkcs12 -export -inkey /tmp/k.pem -in /tmp/c.pem -out /tmp/c.p12 \
-     -passout pass:blitzbot -name "blitzbot-dev" -legacy
-   security import /tmp/c.p12 -k ~/Library/Keychains/login.keychain-db -P blitzbot \
-     -T /usr/bin/codesign -T /usr/bin/security
-   security set-key-partition-list -S "apple-tool:,apple:,codesign:" -s -k "" \
-     ~/Library/Keychains/login.keychain-db
-   security add-trusted-cert -r trustRoot -p codeSign \
-     -k ~/Library/Keychains/login.keychain-db /tmp/c.pem
-   rm /tmp/k.pem /tmp/c.pem /tmp/c.p12
-   ```
-
-2. **Logging**: Nie `print()` oder `FileHandle.standardError` — **immer `Log.write(...)`** aus `Log.swift`. Schreibt nach `~/.blitzbot/logs/blitzbot.log`, überlebt App-Neustart, ist per `tail` beobachtbar.
-
-3. **Lifecycle**: `applicationDidFinishLaunching` im `NSApplicationDelegate` (via `@NSApplicationDelegateAdaptor`) ist der einzige verlässliche Startpunkt. `.onAppear` auf `MenuBarExtra`-Label feuert **nicht** zuverlässig.
-
-4. **Permissions-Fallstrick** (wichtig!):
-   - Jedes `codesign --force --sign -` erzeugt neuen CDHash → macOS TCC invalidiert alle System-Permissions (Accessibility, PostEvent). Mikrofon (user TCC) überlebt.
-   - **Dauerhafte Lösung**: stabiles Self-Signed-Cert aus *Keychain Access → Zertifikatsassistent → Zertifikat erstellen* (Name `blitzbot-dev`, Typ Code Signing, Selbstsigniert, "Immer vertrauen"). Dann `codesign -s blitzbot-dev ...` und Permissions bleiben.
-   - Bis dahin: User muss nach jedem Rebuild Accessibility re-granten. Setup-Fenster + Settings-Tab "Setup" bietet Shortcut zu Systemeinstellungen.
+4. **Lifecycle**: `applicationDidFinishLaunching` im `NSApplicationDelegate` (`@NSApplicationDelegateAdaptor`) ist der einzige verlässliche Startpunkt. `.onAppear` auf `MenuBarExtra`-Label feuert nicht zuverlässig.
 
 5. **SourceKit-Warnungen nach Edits sind oft stale.** Immer `swift build` laufen lassen und darauf vertrauen, nicht blind den SourceKit-Fehlern folgen.
 
 6. **SwiftUI-Fokus-Falle**: Alle floating Panels (HUD, Setup) müssen `NSPanel` mit `.nonactivatingPanel` + `ignoresMouseEvents` sein. Sonst klaut das Panel den Fokus und `Cmd+V` pastet ins falsche Ziel.
 
-7. **KeyboardShortcuts-Package**: gepinnt auf `<1.15.0`. Version 2.x nutzt `#Preview`-Macros die einen Xcode-only `PreviewsMacros`-Plugin brauchen → SPM-Build bricht.
+7. **KeyboardShortcuts gepinnt auf `<1.15.0`.** Version 2.x nutzt `#Preview`-Macros die einen Xcode-only `PreviewsMacros`-Plugin brauchen → SPM-Build bricht.
 
-8. **Dependencies**: Keine weiteren externen Packages ohne Rückfrage. Jede Dep vergrößert die Bundle-Size und erhöht Supply-Chain-Risiko.
+8. **Keine weiteren Dependencies ohne Rückfrage.** Jede Dep vergrößert die Bundle-Size und erhöht Supply-Chain-Risiko.
 
-9. **Vor jedem Push: harte PII/Secrets-Sperre — NIEMALS übersprungen**:
-   - Bei JEDEM `git push` (ohne Ausnahme) vorher `bosch-secrets-scan` plus Pattern-Grep auf den Diff laufen lassen.
-   - Wenn irgendein Treffer: Push abbrechen, User informieren, Datei aus Commit entfernen bevor gepusht wird.
-   - Als kritisch gilt alles aus den Kategorien: API-Keys / Tokens / JWT-Prefixe, Private Keys, Personennamen, Firmen-Emails, lokale User-Pfade, interne IP-Bereiche, WiFi-SSIDs, MAC-Adressen, interne Hostnames, Device-IDs, Signal/Telefonnummern, sowie Inhalte aus den lokalen Notiz-Files.
-   - Die **exakte Pattern-Liste** steht ausschließlich in `.git/hooks/pre-push` (repo-lokal, nicht committed) — dort als Regex gepflegt, damit diese Datei selbst clean bleibt.
-   - Der Hook blockt den Push mechanisch. Nicht löschen, nicht mit `--no-verify` umgehen.
-   - **Verantwortung**: Wenn trotzdem etwas durchrutscht → `git filter-repo` oder BFG zum Scrubben der History + Force-Push nach User-Freigabe. Betroffene Keys rotieren. Nie einfach "im nächsten Commit löschen" — der alte Commit bleibt für immer in der History sichtbar.
+9. **Vor jedem Push: PII/Secrets-Sperre.** Skill `pre-push-scan` + mechanischer `.git/hooks/pre-push`. Als kritisch gilt: API-Keys, Tokens, JWT-Prefixe, Private Keys, Personennamen, Firmen-Emails, lokale Pfade, interne IPs, SSIDs, MACs, interne Hostnames, Device-IDs, Telefonnummern, Inhalte aus lokalen Notiz-Files. Niemals mit `--no-verify` umgehen.
 
-9a. **Vor jedem Push: README auf den aktuellen Stand bringen.** Ohne Ausnahme. Die README ist die Visitenkarte des Repos und MUSS vor jedem `git push` widerspiegeln was im Code steht:
-   - Neue Features → in die passenden Sektionen (Modi-Tabelle, Usage, Settings) einarbeiten
-   - Breaking Changes / UI-Änderungen → unter `## Changelog` als neue Version dokumentieren (mit Datum, knappen Stichpunkten)
-   - Entfernte oder umbenannte Funktionen → raus aus der README
-   - Neue Dateien/Module → in die Datei-Übersicht unter `## Development → Key files`
-   - TOC (`## Table of contents`) synchron halten
-   - Keine "TODO: update README" Commits. Lieber ein Feature verschieben als die Doku verkommen lassen.
+10. **Vor jedem Push: README aktuell halten.** Neue Features → Modi-Tabelle / Usage / Settings. Breaking Changes → README § Changelog als neue Version (Datum + Stichpunkte). Entfernte Funktionen → raus. Neue Dateien/Module → README § Development → Key files. TOC synchron. Keine „TODO: update README"-Commits.
 
-9b. **GitHub Release Notes: immer bilingual (Deutsch + English).** Keine Ausnahme. Muster:
-   ```
-   > 🇩🇪 Deutsch unten · 🇬🇧 English below
+11. **Release Notes bilingual (English zuerst, Deutsch danach).** GitHub schneidet bei schmalen Fenstern oben ab, Englisch ist breitere Leser-Basis. Inhalt identisch, nicht nur übersetzte Überschriften. Bei `gh release edit` beide Blöcke aktualisieren.
 
-   ---
-
-   ## 🇬🇧 English
-   <notes in English>
-
-   ---
-
-   ## 🇩🇪 Deutsch
-   <notes in German>
-   ```
-   Zuerst English, dann Deutsch (GitHub schneidet nach oben ab bei kurzer Fenstergröße — Englisch ist die breitere Leser-Basis). Inhalt muss identisch sein, nicht bloß übersetzte Überschriften. Wenn ein Begriff nur in einer Sprache Sinn ergibt (z.B. UI-Label in Deutsch), in Klammern ergänzen. Bei nachträglichen Edits an Release Notes via `gh release edit`: beide Sprach-Blöcke aktualisieren, nicht nur einen.
-
-10. **UI-Änderungen im echten Build testen** — nicht nur Code lesen. Nach jedem UI-Change: rebuild, deploy, Hotkey drücken, Screenshot/Verhalten prüfen.
-
-11. **Commit-Stil**: Kleine, testbare Commits mit klaren Messages. Kein "wip", kein "fix stuff".
+12. **UI-Änderungen im echten Build testen.** Nach jedem UI-Change: rebuild, deploy, Hotkey drücken, Verhalten prüfen.
 
 ---
 
@@ -158,47 +65,44 @@ Codex läuft als Plugin in Claude Code. Claude ist opinionated und legt los; Cod
 
 - **Menubar-App** (Icon oben rechts) — Activation-Policy per Default `.accessory` (kein Dock), wird nur beim Öffnen des Office-Fensters temporär auf `.regular` geschaltet
 - Läuft permanent im Hintergrund, systemweit verfügbar
-- Globaler Hotkey → Aufnahme → Transkription → Auto-Paste in die aktive App
-- Funktioniert in LinkedIn, Slack, Mail, WhatsApp Web — überall
-- Toggle (drücken/erneut drücken zum Stoppen); Modus kann während Aufnahme gewechselt werden
+- Globaler Hotkey → Aufnahme → Transkription → Auto-Paste in die aktive App (LinkedIn, Slack, Mail, WhatsApp Web — überall)
+- Toggle (drücken/erneut drücken); Modus kann während Aufnahme gewechselt werden
 
 ### Modi (Default-Hotkeys — in Settings individuell belegbar)
 
 | Pos | Modus    | Hotkey | Tagline                              | Verhalten |
 |-----|----------|--------|--------------------------------------|-----------|
-| 1   | Normal   | `⌘⌥1`  | "Sprache rein. Text raus."          | Wort-für-Wort, unverändert, **kein** LLM-Call |
-| 2   | Business | `⌘⌥2`  | "Sprache rein. Businesstauglich raus." | LLM → klar, höflich, strukturiert für Business-Kommunikation |
+| 1   | Normal   | `⌘⌥1`  | "Sprache rein. Text raus."          | Wort-für-Wort, **kein** LLM-Call |
+| 2   | Business | `⌘⌥2`  | "Sprache rein. Businesstauglich raus." | LLM → klar, höflich, strukturiert |
 | 3   | Plus     | `⌘⌥3`  | "Geschrieben sprechen."             | LLM → Füllwörter/Grammatik glätten, Stimme bleibt |
 | 4   | Rage     | `⌘⌥4`  | "Frust rein. Entspannt raus."       | LLM → Beleidigungen raus, Kritik bleibt |
 | 5   | Emoji    | `⌘⌥5`  | "Sprache rein. Text mit Emojis raus." | Original + dezente Emojis |
-| 6   | Prompt   | `⌘⌥6`  | "Idee rein. Prompt raus."           | LLM verwandelt lose gesprochene Idee in einen sauberen, tool-agnostischen Prompt (ChatGPT/Claude/Cursor/Aider/Copilot/Gemini). Output ist der Prompt selbst, nicht das Ergebnis. |
-| 7   | Office   | *(kein Default — in Settings → Hotkeys belegen)* | "Auswahl rein. Review + Paste raus." | Non-Voice: Selection/Clipboard/File-Drop → Preview-Fenster → Modus-Picker → LLM → ⌘↵ pastet zurück. Siehe `OfficeView.swift`. |
+| 6   | Prompt   | `⌘⌥6`  | "Idee rein. Prompt raus."           | LLM verwandelt gesprochene Idee in tool-agnostischen Prompt (ChatGPT/Claude/Cursor/…). Output ist der Prompt, nicht das Ergebnis. |
+| 7   | Office   | *(opt-in)* | "Auswahl rein. Review + Paste raus." | Non-Voice: Selection/Clipboard/File-Drop → Preview → Modus-Picker → LLM → ⌘↵ pastet. Siehe `OfficeView.swift`. |
 
-Plus `⌘⌥0` (Hotkey, keine UI-Reihe): liest aktuelle Selection via AX/⌘C, schreibt im Default-Modus um, paste zurück — fire-and-forget.
+Plus `⌘⌥0`: liest aktuelle Selection via AX/⌘C, schreibt im Default-Modus um, pastet zurück — fire-and-forget.
 
-Jeder Modus hat anpassbaren System-Prompt in den Settings (leer = Sprach-abhängiger Default, bei Custom-Text: toggle pro Modus „Replace" vs. „Append to default").
+Jeder Modus hat anpassbaren System-Prompt in Settings (leer = Sprach-abhängiger Default, bei Custom-Text: Toggle „Replace" vs. „Append to default" pro Modus).
 
-**Sprach-Routing (DE / EN)**: Whisper läuft mit `-l auto`, Content-basierter Stopword-Detector entscheidet finale Sprache (weil Whispers eigene Auto-Detect auf kurzen Clips unzuverlässig ist). Priorität in `ModeProcessor.resolveLanguage`: user-Override aus Settings > Content-Detector > Whisper-Metadata. Claude-Prompts gibt es pro Modus in zwei Sprachen (`defaultSystemPromptGerman` / `defaultSystemPromptEnglish` in `Mode.swift`).
+**Sprach-Routing (DE / EN)**: Whisper läuft mit `-l auto`, Content-Stopword-Detector entscheidet finale Sprache (Whispers Auto-Detect auf kurzen Clips unzuverlässig). Priorität in `ModeProcessor.resolveLanguage`: user-Override > Content-Detector > Whisper-Metadata. Prompts pro Modus in DE+EN (`defaultSystemPromptGerman` / `defaultSystemPromptEnglish` in `Mode.swift`).
 
 ### UI-Copy-Regeln
 
-- Taglines immer nach dem Muster **"X rein. Y raus."** — prägnant, keine Fachsprache
-- Menubar-Icon reflektiert Status: `bolt.fill` (bereit), `record.circle.fill` rot+REC (aufnehmend), `waveform` gelb (verarbeitend), `checkmark.circle.fill` grün (fertig), `exclamationmark.triangle.fill` orange (Fehler)
-- Menubar-Popover minimal: Header + Modi-Liste + Footer (Quit, API-Key-Warning)
-- Settings-Zahnrad im Popover-Header oben rechts
-- **Deutsche UI** ist Default, **Englisch** via Localizable.strings
-- Deutsche User-Logs (`"Aufnahme läuft"`), englische Identifier/Code (`startRecording`)
+- Taglines immer „X rein. Y raus." — prägnant, keine Fachsprache
+- Menubar-Icon spiegelt Status: `bolt.fill` (bereit), `record.circle.fill` rot (aufnehmend), `waveform` gelb (verarbeitend), `checkmark.circle.fill` grün (fertig), `exclamationmark.triangle.fill` orange (Fehler)
+- Menubar-Popover minimal: Header + Modi-Liste + Footer (Quit, API-Key-Warning). Settings-Zahnrad im Popover-Header oben rechts
+- **Deutsche UI** ist Default, Englisch via `Localizable.strings`. Deutsche User-Logs (`"Aufnahme läuft"`), englische Identifier (`startRecording`)
 - HUD (Floating-Panel während Aufnahme): zentral, Modus-Badge + Timer mm:ss + Waveform + Status
 
 ### Settings-UI (Tabs)
 
-1. **Allgemein**: Output-Sprache (Auto/DE/EN), Auto-Stop-Silence-Timer, Whisper-Binary + Modell-Pfad, Privacy-Mode + „Immer anonymisieren"-Liste, Default-Modus für Selection-Rewriter (⌘⌥0)
-2. **Profile**: Connection Profiles (Anthropic/OpenAI/Ollama/custom endpoints) — CRUD, JSON Import/Export, Quick-Switcher, `Auf diesem Mac suchen`-Scanner, Modell-Discovery pro Profil
-3. **Hotkeys**: pro Modus `KeyboardShortcuts.Recorder`
-4. **Prompts**: System-Prompt pro Modus editierbar — `Replace default` vs. `Append to default` Toggle pro Modus
-5. **Vokabular**: Eigennamen/Fachbegriffe-Liste (wird als `--prompt` an Whisper)
-6. **Setup**: Shortcut zu Permissions-Fenster
-7. **Über**: Version, Lizenz, Auto-Update-Check
+1. **Allgemein** — Output-Sprache, Auto-Stop-Silence-Timer, Whisper-Binary + Modell-Pfad, Privacy-Mode + „Immer anonymisieren"-Liste, Default-Modus für ⌘⌥0
+2. **Profile** — Connection Profiles CRUD, JSON Import/Export, Quick-Switcher, Mac-Scanner, Modell-Discovery pro Profil
+3. **Hotkeys** — pro Modus `KeyboardShortcuts.Recorder`
+4. **Prompts** — System-Prompt pro Modus editierbar, Replace/Append-Toggle
+5. **Vokabular** — Eigennamen/Fachbegriffe (als `--prompt` an Whisper)
+6. **Setup** — Shortcut zu Permissions
+7. **Über** — Version, Lizenz, Auto-Update-Check
 
 ---
 
@@ -206,133 +110,62 @@ Jeder Modus hat anpassbaren System-Prompt in den Settings (leer = Sprach-abhäng
 
 ### Stack
 
-- **Sprache**: Swift 5.9+, SwiftUI (macOS 13+)
-- **Build**: Swift Package Manager (`swift build`), nicht Xcode-Projekt
-- **STT**: whisper.cpp lokal via `whisper-cli` CLI (nicht Whisper API) — offline, privat
-- **LLM-Verarbeitung** (Business/Plus/Rage/Emoji/Prompt/Office): via `LLMRouter` → Connection Profile. Provider: Anthropic / OpenAI / Ollama / custom OpenAI-kompatible Endpoints. Auth: `x-api-key` / `Bearer` / keine.
-- **Privacy-Layer**: lokaler Pre-Send-Anonymizer (`PrivacyEngine`) — `NLTagger(.nameType)` + `NSDataDetector` + Regex (IBAN/MAC/IPv6/Kreditkarte mit Luhn) ersetzt PII mit `[NAME_n]`/`[UNTERNEHMEN_n]`/… vor dem Call, reverse-mapped zurück beim Response. Standardmäßig an.
-- **Hotkeys**: `KeyboardShortcuts` von Sindre Sorhus (SPM, `<1.15.0`)
-- **Auto-Paste**: `NSPasteboard` + `CGEvent` Cmd+V-Simulation (Accessibility-Permission)
-- **Audio**: `AVAudioEngine` mit Tap für PCM-Samples (Canvas-Waveform) + RMS-Pegel
-- **Floating-UI**: `NSPanel` (`nonactivatingPanel`, `fullScreenAuxiliary`, `canJoinAllSpaces`)
+- **Swift 5.9+, SwiftUI** (macOS 13+), **SPM** (nicht Xcode-Projekt)
+- **STT:** whisper.cpp lokal via `whisper-cli` CLI (nicht Whisper API) — offline, privat
+- **LLM (Business/Plus/Rage/Emoji/Prompt/Office):** `LLMRouter` → aktives `ConnectionProfile`. Provider: Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel. Auth: `x-api-key` / `Bearer` / keine.
+- **Privacy-Layer:** lokaler `PrivacyEngine` — `NLTagger(.nameType)` + `NSDataDetector` + Regex (IBAN/MAC/IPv6/Kreditkarte mit Luhn) ersetzt PII mit `[NAME_n]`/`[UNTERNEHMEN_n]`/…, reverse-mapped beim Response. Standardmäßig an.
+- **Hotkeys:** `KeyboardShortcuts` (`<1.15.0`)
+- **Auto-Paste:** `NSPasteboard` + `CGEvent` Cmd+V-Simulation (Accessibility)
+- **Audio:** `AVAudioEngine` mit Tap (PCM-Samples + RMS für HUD)
+- **Floating-UI:** `NSPanel` (`nonactivatingPanel`, `fullScreenAuxiliary`, `canJoinAllSpaces`)
+- **Prompt Caching:** aktiv für Anthropic-direkte Calls (`cache_control: ephemeral` am System-Prompt), deaktiviert bei Proxy- oder Custom-baseURL-Profilen.
 
-### Architektur
-
-```
-Hotkey-Event (KeyboardShortcuts)
-   ↓
-ModeProcessor.toggle(mode)          ← Mode-Switch während Aufnahme via gleiche Logik
-   ↓
-AudioRecorder.start() [AVAudioEngine → /tmp/*.wav, Pegel + PCM-Samples an HUD]
-   ↓ [User redet, Hotkey nochmal]
-Stop-Tap → wav fertig geschrieben
-   ↓
-WhisperTranscriber.transcribe() [whisper-cli -l auto --prompt "<vocab>" …]
-   ↓
-resolveLanguage() → user-Override > Content-Stopword-Detector > Whisper-Metadata
-   ↓
-PrivacyEngine.anonymize(text)       ← wenn Privacy on: PII → [NAME_n] etc.
-   ↓
-LLMRouter.rewrite(text, prompt, config)   ← wählt aktives ConnectionProfile
-   ├─ Normal   → Text direkt (kein Call — Privacy-Wrap wird geskippt)
-   ├─ Business → LLM (business prompt, DE oder EN)
-   ├─ Plus     → LLM (glätten, Stimme behalten)
-   ├─ Rage     → LLM (entschärfen, Kritik bleibt)
-   ├─ Emoji    → LLM (Emojis ergänzen)
-   ├─ Prompt   → LLM (Idee → sauberer Prompt für ein anderes AI-Tool)
-   └─ Office   → kein Voice-Pfad — getrennt in OfficeView (Selection/File-Drop → Preview)
-   ↓
-   [Fehler mit LLMError.isRecoverable: HUD bleibt offen, Transcript → Clipboard,
-    Profile-Picker mit 30s-Countdown, Retry via Profile-Override möglich]
-   ↓
-PrivacyEngine.deanonymize(response) ← Placeholder → Originale zurück
-   ↓
-Paster.pasteText() → NSPasteboard + CGEvent Cmd+V (120ms Delay, cgAnnotatedSessionEventTap)
-   ↓
-Text erscheint in aktiver App
-```
-
-### Dateistruktur
+### Architektur (Flow)
 
 ```
-Sources/blitzbot/
-  blitzbotApp.swift        ← @main + AppDelegate + MenuBarExtra + Windows (Settings / Setup / Office)
-  AppInfo.swift            ← Version, Repo-URL, Releases-API-URL (zentrale Konstanten)
-  AppConfig.swift          ← UserDefaults, Keychain-Wrapper, Vokabular, outputLanguage, customPrompts,
-                              profileStore, privacyEngine, Selection-Rewriter-Default-Modus
-  Mode.swift               ← enum (normal/business/plus/rage/emoji/aiCommand/officeMode),
-                              displayName, tagline, symbol, defaultSystemPrompt(for:) DE/EN,
-                              voiceModes-Filter, Mapping Mode → Opus-4.7-Effort
-  HotkeyManager.swift      ← KeyboardShortcuts-Bindings pro Mode + rewriteSelection (⌘⌥0) +
-                              toggleOffice + Hotkey-Migrationen
-  ModeProcessor.swift      ← State-Machine, Timer, Dispatch an Whisper+LLMRouter, resolveLanguage
-                              + Content-Detektor, Recovery-Kontext (30s-Countdown, Profile-Retry)
-  AudioRecorder.swift      ← AVAudioEngine + rolling PCM-Buffer + RMS-Level-Publishing für HUD
-  WhisperTranscriber.swift ← subprocess wrapper um whisper-cli, JSON-Parse für erkannte Sprache
-  LLMRouter.swift          ← routet LLM-Call durchs aktive Profile (oder Legacy-Fallback),
-                              wraps Privacy-Engine, Profile-Override-Overload für Recovery-Retries
-  LLMError.swift           ← strukturierter Error-Typ (connectionFailed/authFailed/serverError/
-                              other) mit `isRecoverable` für HUD-Recovery
-  AnthropicClient.swift    ← Claude API Request/Response (unterstützt custom baseURL + authScheme),
-                              wirft `LLMError`
-  OpenAIClient.swift       ← OpenAI-kompatibler API-Client (same error contract)
-  OllamaClient.swift       ← Ollama lokaler LLM-Client (same error contract)
-  AppleIntelligenceClient.swift ← on-device `FoundationModels` LLM (macOS 26+, Availability-
-                                    gated). Kein HTTP, kein Key. Alle Calls hinter
-                                    `#if canImport(FoundationModels)` + `@available`
-  ConnectionProfile.swift  ← Profile-Modell (provider, baseURL, authScheme, model, keychainSlot)
-  ProfileStore.swift       ← @ObservedObject store — CRUD, UserDefaults-Persistenz, Keychain-I/O
-  ProfileScanner.swift     ← scannt ~/.claude-profiles/, ~/.claude/settings.json auf importierbare Konfigs
-  ModelDiscovery.swift     ← holt Live-Modelliste von Anthropic /v1/models, OpenAI, Ollama
-  PrivacyEngine.swift      ← Pre-Send-Anonymizer — NLTagger + NSDataDetector + Regex (IBAN/MAC/
-                              IPv6/Kreditkarte mit Luhn), reversible Placeholder-Mapping in-memory
-  Paster.swift             ← NSPasteboard + CGEvent Cmd+V-Simulation (nonactivating)
-  KeychainStore.swift      ← API-Key in Keychain mit Open-Access-ACL (service de.blitzbot.mac)
-  KeychainPreWarmer.swift  ← One-time-Migration beim ersten Launch → Keychain-Items auf Open-ACL umschreiben
-  Log.swift                ← ~/.blitzbot/logs/blitzbot.log (append-only, per-line timestamp)
-  Permissions.swift        ← TCC-Status-Checker (Mic/Accessibility/Whisper-Binary/Whisper-Model)
-  MenuBarView.swift        ← Popover (Header mit Privacy-Shield + Mode-List + Office-Row + Footer)
-  SettingsView.swift       ← Custom Icon-Toolbar (7 Tabs: Allgemein/Profile/Hotkeys/Prompts/Vokabular/Setup/Über)
-  ProfilesView.swift       ← Profile-Tab UI — Liste, Inline-Editor, Scanner, Quick-Switcher-Chips
-  PermissionsView.swift    ← Onboarding-Wizard (Mic, Accessibility, Whisper-Binary, Whisper-Model)
-  RecordingHUD.swift       ← NSPanel Floating-HUD: Timer + Waveform + Mode-Pills + Stop + Language-
-                              Badge + Privacy-Shield + Inline-Recovery-UI
-  OfficeView.swift         ← Office-Fenster: Dropzone, Text-Editor, Verarbeiten, Result-Preview,
-                              Copy-to-Clipboard, Session-Profile/Model-Override
-  SelectionRewriter.swift  ← AX-Selection-Grab + ⌘C-Fallback, LLM-Call, Paster — triggered by ⌘⌥0
-  Updater.swift            ← GitHub-Releases-API-Check + Download + Install-in-place
-
-blitzbot.app/Contents/
-  Info.plist               ← Bundle-ID de.blitzbot.app, Version, CFBundleLocalizations
-                              (Activation-Policy `.accessory` wird programmatisch in
-                               applicationWillFinishLaunching gesetzt, kein LSUIElement mehr)
-  Resources/
-    AppIcon.icns           ← Icon (generiert via tools/make-icon.swift)
-    en.lproj/
-      Localizable.strings  ← englische Strings (mode names + taglines, Rest via defaultValue)
-
-blitzbot-ios/              ← eigenständiger iOS-MVP (Hold-to-Talk + Share Extension + Siri Shortcut,
-                              Clipboard statt Auto-Paste, nicht released)
-
-tools/
-  make-icon.swift          ← rendert blitzbot.iconset → AppIcon.icns
-
-build-app.sh               ← Default (blitzbot-dev) / --sign <id> / --release (ad-hoc zip)
-setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
-
-.git/hooks/pre-push        ← repo-lokal, scannt Diff auf Secrets + PII (regel 9)
-.git/info/exclude          ← repo-lokal, git-ignore ohne Push (für private Session-Notizen)
+Hotkey → ModeProcessor.toggle → AudioRecorder → wav → WhisperTranscriber
+       → resolveLanguage → PrivacyEngine.anonymize → LLMRouter.rewrite
+       → (on error: HUD bleibt, Clipboard-Safety-Net, Profile-Retry 30s)
+       → PrivacyEngine.deanonymize → Paster (NSPasteboard + CGEvent Cmd+V)
 ```
+
+### Key Files
+
+`Sources/blitzbot/`:
+
+| Datei | Rolle |
+|---|---|
+| `blitzbotApp.swift` | `@main` + AppDelegate + MenuBarExtra + Settings/Setup/Office-Windows |
+| `Mode.swift` | Enum + DE/EN System-Prompts + Opus-4.7-Effort-Map |
+| `ModeProcessor.swift` | State-Machine, Whisper-Dispatch, Sprach-Routing, Recovery-Kontext |
+| `HotkeyManager.swift` | KeyboardShortcuts-Bindings + `⌘⌥0` Selection-Rewriter + Office-Toggle |
+| `AudioRecorder.swift` | AVAudioEngine + PCM-Tap + RMS-Level |
+| `WhisperTranscriber.swift` | `whisper-cli` subprocess wrapper, JSON-Parse |
+| `LLMRouter.swift` + `LLMError.swift` | Provider-Dispatch + strukturierte Errors mit `isRecoverable` |
+| `AnthropicClient.swift` / `OpenAIClient.swift` / `OllamaClient.swift` | API-Clients |
+| `ConnectionProfile.swift` + `ProfileStore.swift` + `ProfileScanner.swift` | Multi-LLM Profile-Management |
+| `PrivacyEngine.swift` | Pre-Send-Anonymizer, reversibles Placeholder-Mapping |
+| `KeychainStore.swift` + `KeychainPreWarmer.swift` | API-Keys mit Open-Access-ACL |
+| `RecordingHUD.swift` + `MenuBarView.swift` + `OfficeView.swift` + `SettingsView.swift` + `ProfilesView.swift` + `PermissionsView.swift` | UI |
+| `Paster.swift` | Cmd+V via CGEvent (nonactivating) |
+| `Log.swift` | `~/.blitzbot/logs/blitzbot.log` append-only |
+| `Updater.swift` | GitHub-Releases-API-Check + In-place-Install |
+
+`blitzbot.app/Contents/Info.plist` — Bundle-ID `de.blitzbot.app`, CFBundleLocalizations. Activation-Policy wird programmatisch in `applicationWillFinishLaunching` auf `.accessory` gesetzt.
+
+`blitzbot-ios/` — eigenständiger iOS-MVP (Hold-to-Talk + Share Extension + Siri Shortcut), nicht released.
 
 ---
 
 ## Sicherheit & Privatsphäre
 
-- **Audio-Dateien**: `/tmp/blitzbot-<uuid>.wav` — nach Transkription **immer** löschen (`defer` in `WhisperTranscriber.transcribe`). Niemals in `~`, niemals als Backup.
-- **API-Keys**: Keychain (`KeychainStore.swift`). Nie `UserDefaults`. Nie ins Repo. Niemals loggen.
-- **Transkripte nicht loggen**: im Dev-Log sind Transkripte nur zum Debuggen drin — für Release `Log.write("TRANSCRIPT: …")`-Calls entfernen oder auf `len=<n>` reduzieren.
-- **Cloud-Calls** (Claude): User weiß durch README + Settings, dass Business/Plus/Rage/Emoji/Prompt den Text an Anthropic schicken. Normal-Modus macht keine Cloud-Calls.
-- **Vor jedem Push**: `bosch-secrets-scan` laufen lassen.
+- **Audio-Dateien:** `/tmp/blitzbot-<uuid>.wav` — nach Transkription **immer** löschen (`defer` in `WhisperTranscriber`). Niemals in `~`, niemals als Backup.
+- **API-Keys:** Keychain mit Open-Access-ACL (`de.blitzbot.mac` service, Pro-Profile-Slot). Nie `UserDefaults`, nie loggen, nie ins Repo.
+- **Transkripte nicht loggen:** im Release-Build keine `Log.write("TRANSCRIPT: …")`-Calls, nur `len=<n>`.
+- **Cloud-Calls:** User weiß via README + Settings, dass Business/Plus/Rage/Emoji/Prompt Text an den aktiven Provider schicken. Normal-Modus macht keine Cloud-Calls. Privacy-Mode default ON seit v1.2.2.
+- **Vor jedem Push:** Skill `pre-push-scan` + Hook blockt mechanisch.
+
+---
 
 ## Nicht tun
 
@@ -341,59 +174,34 @@ setup-whisper.sh           ← brew install whisper-cpp + Modell-Download
 - Kein `sudo` ohne Rückfrage
 - Keine globalen Installs (`brew install -g`, `npm -g`) ohne Freigabe
 - Keine destruktiven Git-Operationen (force-push, reset --hard) automatisch
-- Kein Re-Sign der App ohne Grund — jedes Re-Sign kostet den User Accessibility-Permissions
-- Keine Dependencies adden ohne Rückfrage
+- Kein Re-Sign der App ohne Grund — jedes Re-Sign kostet User Accessibility-Permissions
 
 ---
 
 ## Aktueller Stand
 
-- **Aktuelle Version**: v1.3.2 (Stand: 2026-04-18)
-- **GitHub**: https://github.com/mosandlt/BlitzBot (MIT, public)
-- **Release-Artifakt**: ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User müssen beim ersten Start Rechtsklick → Öffnen (Gatekeeper), weil nicht notarisiert.
-- **Keychain**: Open-Access-ACL (`SecAccessCreate` mit leerem trustedApps-Array). Kein Prompt, kein PW, kein „Immer erlauben" — weder beim ersten Start noch nach Rebuilds. Einmalige Migration beim ersten Launch via `KeychainPreWarmer` (UserDefaults-Flag `keychain.openACL.migrated.v2`).
-- **Bundle-ID**: `de.blitzbot.app`
-- **Keychain-Service**: `de.blitzbot.mac` — Accounts: `anthropic-api-key`, `openai-api-key`, `ollama-api-key` (Legacy) + pro Profile-Slot `profile-<uuid>` (neue Struktur seit v1.1.0)
-- **LLM-Architektur**: `LLMRouter` → aktives `ConnectionProfile` (Provider Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel). Umschaltbar in Settings → Profile per Quick-Switcher oder pro Office-Session. Apple Intelligence war in v1.3.0/1.3.1 integriert, in v1.3.2 entfernt — 3B-Modell empirisch unbrauchbar für alle LLM-Modi. Für lokale größere Modelle: Ollama mit Qwen/Llama/Mistral 14B+.
-- **Privacy**: Standardmäßig **an** seit v1.2.2. Lokale Anonymisierung vor jedem LLM-Call, Reverse-Mapping im Response.
-- **iOS Sub-Projekt**: `blitzbot-ios/` (Scaffold, nicht released; Hold-to-Talk + Share Extension + Siri Shortcut)
-  - Simulator: `./run-sim.sh` — baut + startet (SFSpeechRecognizer geht im Sim NICHT, nur auf echtem iPhone)
-  - Mac nativ: `./run-mac.sh` — braucht Apple-ID in Xcode (Personal Team, gratis)
+- **Aktuelle Version:** v1.3.4 (Stand: 2026-04-20)
+- **GitHub:** https://github.com/mosandlt/BlitzBot (MIT, public)
+- **Bundle-ID:** `de.blitzbot.app`. Keychain-Service: `de.blitzbot.mac` (Accounts pro Profile-Slot + Legacy `anthropic-api-key` / `openai-api-key` / `ollama-api-key`)
+- **Release-Artifakt:** ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User: Rechtsklick → Öffnen beim ersten Start (nicht notarisiert).
+- **Keychain-ACL:** Open-Access (`SecAccessCreate` mit leerem `trustedApps`). Kein Prompt beim ersten Start oder nach Rebuilds. Einmalige Migration via `KeychainPreWarmer` (Flag `keychain.openACL.migrated.v2`).
+- **LLM-Architektur:** `LLMRouter` → aktives `ConnectionProfile`. Apple Intelligence war v1.3.0/v1.3.1, in v1.3.2 entfernt (3B empirisch unbrauchbar). Für lokale größere Modelle: Ollama + Qwen/Llama/Mistral 14B+.
+- **Privacy:** default an seit v1.2.2. Lokale Anonymisierung vor jedem LLM-Call, Reverse-Mapping im Response.
+- **Prompt Caching:** aktiv bei Anthropic-direkten Calls (`cache_control: ephemeral` am System-Prompt, 5-Min-TTL). Bei Proxy-/Custom-baseURL-Profilen deaktiviert.
+- **iOS Sub-Projekt:** `blitzbot-ios/` Scaffold, nicht released. SFSpeechRecognizer funktioniert nur auf echtem iPhone, nicht im Simulator.
 
-## Release-Historie (Kurz)
+Release-Historie komplett: `docs/CHANGELOG.md`.
 
-| Version | Kernänderung |
-|---|---|
-| v1.3.2 | **Apple Intelligence wieder raus**. v1.3.0/v1.3.1-Integration komplett entfernt nach Live-Tests: 3B-Modell halluziniert/ignoriert System-Prompt in allen LLM-Modi. Privacy-Skip für Ollama bleibt (nützlich, unabhängig). Für lokale größere Modelle → Ollama + Qwen/Llama 14B+. |
-| v1.3.1 | Privacy-Mode wird bei lokalen Providern (Ollama, Apple Intelligence) automatisch übersprungen — Rohtext geht direkt zum on-device Modell. **Superseded durch v1.3.2**: Ollama-Skip bleibt, Apple-Intelligence-Teil ist obsolet. |
-| v1.3.0 | **Apple Intelligence als 4. Provider** (on-device via `FoundationModels`, macOS 26+, kein Key/URL). **Superseded durch v1.3.2 — Integration entfernt**: 3B-Modell empirisch unbrauchbar für LLM-Modi (Hallucinations, ignoriert Prompt, Loops). |
-| v1.2.4 | Opus-4.7 per-Mode Effort-Hints (`output_config.effort`, nur bei `claude-opus-4-7`) + CLAUDE.md-Cleanup + Build-Cache-Hygiene (stray `.build/` aus Nextcloud raus). |
-| v1.2.3 | Privacy-Coverage erweitert: Postadressen, IBAN, Kreditkarten mit Luhn, MAC, IPv6 — alle lokal detektiert |
-| v1.2.2 | Privacy-Mode default ON, „Immer anonymisieren"-Term-Liste, System-Prompt-Hint rewritten, Session-Mapping in Settings, Menu-Bar-Shield |
-| v1.2.1 | Privacy-Mode (initial): `NLTagger` + `NSDataDetector` + Regex, Menu-Bar/HUD/Office-Shields. Office-Modell-Dropdown (live). Office-Hotkey opt-in. Dock-Visibility für Office |
-| v1.2.0 | **Office Mode** (7. Modus, interaktiver Selection-Rewriter). Inline-Recovery nach LLM-Fehlern (Profile-Switch-Retry, Clipboard-Safety-Net). Strukturierte `LLMError`. Voice-Mode-Filter trennt Voice- von Non-Voice-Pfaden |
-| v1.1.0 | Connection Profiles, Model-Picker, resizable Settings, Keychain open-access ACL (kein Prompt mehr) |
-| v1.0.10 | Services raus (Gatekeeper blockt self-signed Apps) + neuer Hotkey `⌘⌥0`: liest Selection via AX/⌘C, schreibt im Default-Modus um |
-| v1.0.9 | macOS Services (in v1.0.10 wieder entfernt wegen Gatekeeper-Inkompatibilität mit non-notarized Apps) |
-| v1.0.8 | Wellenform-Amplitude deutlich erhöht (4.5× Gain, geclampt auf ±1) |
-| v1.0.7 | Multi-LLM: Anthropic/OpenAI/Ollama, Provider-Picker, dynamische Ollama-Modelliste, stale-Error-Fix |
-| v1.0.6 | Echte Wellenform (Canvas/PCM), Pause/Resume, Auto-Stop-Uhr, Stille-Verzögerung 5s, 60s Default, Cancel-Button, Auto-Execute, Security-Fixes |
-| v1.0.5 | Ad-hoc Release-Pipeline, Gatekeeper-Workaround-Docs, bilingual Release Notes |
-| v1.0.4 | Fix: englischer Input → englischer Output (customPrompts sauber getrennt von Defaults) |
-| v1.0.3 | Mode 6 repurposed: „AI Command" → „Prompt" (Prompt-Optimizer); Content-Sprach-Erkennung als Whisper-Override |
-| v1.0.2 | 6. Modus (AI Command), automatische Sprach-Erkennung (DE/EN), manueller Override |
-| v1.0.1 | HUD Mode-Switcher + Stop-Button, Cmd+Q-Fix, Settings-UI mit Icon-Toolbar, Hotkey-Migration |
-| v1.0.0 | Initiales Release: 5 Modi (Normal/Business/Plus/Rage/Emoji), Floating-HUD, Vokabular, Auto-Updater |
+---
 
 ## Offene Punkte
 
-- Apple Developer Program + Notarisierung (wenn User-Basis >0 wird, 99 €/Jahr, ersetzt ad-hoc)
-- Evtl. Hold-to-Talk als Alternative zu Toggle (steht auch in der Roadmap der README)
-- Lokales Whisper-Modell: gesetzt auf `large-v3-turbo` — evtl. kleineres als Option in Settings
+- Apple Developer Program + Notarisierung (wenn User-Basis >0 wird, 99 €/Jahr)
+- Hold-to-Talk als Alternative zu Toggle
+- Whisper-Modell-Option in Settings (aktuell fix `large-v3-turbo`)
 - Streaming-Transkription mit Interim-Text im HUD
-- Multi-Mic-Selector in Settings
-- Translate-Modus (Diktat in A, Output in B)
-- iOS-App testen + releasen (Scaffold existiert, nicht released)
+- Multi-Mic-Selector
+- Translate-Modus (Diktat A → Output B)
+- iOS-App testen + releasen
 - Launch-at-Login Toggle via SMAppService
-- Apple Intelligence re-evaluieren falls Apple in zukünftigen macOS-Versionen ein deutlich größeres on-device Modell freigibt (aktuell: 3B, per v1.3.2 als unbrauchbar abgeschlossen)
-- Build-Cache-Hygiene: sicherstellen, dass `.build/` nie im Nextcloud-Ordner landet (Regel 1 in Workflow-Regeln)
+- Apple Intelligence re-evaluieren, falls Apple größeres on-device Modell liefert

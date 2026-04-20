@@ -1,0 +1,1 @@
+also ich kann echt nicht mehr das ist so ein verdammter mist jetzt ist schon wieder das deployment kaputt und keiner kümmert sich drum wie oft muss ich das denn noch sagen dass wir da endlich mal eine richtige pipeline brauchen

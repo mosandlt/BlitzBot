@@ -1,0 +1,15 @@
+# Checks: kein Preamble, kein Meta-Satz, kein Code generiert, kein Markdown-Code-Block,
+# keine Headings, Update-Frame (nicht Neu-Projekt), angemessene Länge
+
+no-preamble
+not-contains: Hier ist dein Prompt
+not-contains: Hier ist ein Prompt
+not-contains: Ich hoffe
+not-contains: ```
+not-contains: const
+not-contains: function
+not-contains: import React
+no-markdown-headings
+contains: bestehend
+min-length: 200
+max-length: 1200

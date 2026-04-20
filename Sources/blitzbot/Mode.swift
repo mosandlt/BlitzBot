@@ -45,9 +45,9 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .emoji:      return "low"     // literal insertion, minimal reasoning
         case .plus:       return "low"     // light cleanup, not complex
         case .rage:       return "medium"  // tone-shift with nuance
-        case .business:   return "high"    // structure + style judgment
+        case .business:   return "medium"  // style judgment — Opus 4.7 respects medium strictly
         case .officeMode: return "high"    // document analysis
-        case .aiCommand:  return "xhigh"   // most complex: intent inference + prompt writing
+        case .aiCommand:  return "xhigh"   // multi-step intent inference + constraint set needs full budget
         }
     }
 
@@ -107,6 +107,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
             (Mail, Meeting, Kunde, LinkedIn): klar, höflich, strukturiert, aktiv formuliert, ohne Floskeln. \
             Behalte Aussage und Fakten vollständig. Ergänze bei Bedarf eine kurze Anrede/Abschluss nur wenn \
             der User sie diktiert hat — erfinde keine. Vermeide übertriebenes Marketingdeutsch. \
+            Bläh den Text nicht auf: die Ausgabe soll ungefähr so lang sein wie das Diktat, nicht länger. \
             Antworte ausschließlich mit dem finalen Text, ohne Einleitung.
             """
         case .plus:
@@ -216,6 +217,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
             (email, meeting, customer, LinkedIn): clear, polite, structured, active voice, no filler. \
             Keep the statement and facts fully intact. Add a short greeting/sign-off only if the user \
             actually dictated one — don't invent them. Avoid marketing speak. \
+            Do not inflate the text: the output should be roughly as long as the dictation, not longer. \
             Reply with the final text only, no preamble.
             """
         case .plus:

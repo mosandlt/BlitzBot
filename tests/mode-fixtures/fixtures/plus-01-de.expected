@@ -1,0 +1,8 @@
+no-preamble
+no-markdown-headings
+not-contains: ähm
+not-contains: halt
+not-contains: sozusagen
+contains: Backend
+contains: Frontend
+max-length: 400

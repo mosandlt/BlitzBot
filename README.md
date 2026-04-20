@@ -767,6 +767,13 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.3.4 (2026-04-20)
+
+- **Prompt caching for Anthropic direct API.** `AnthropicClient` now sends the system prompt with `cache_control: { type: ephemeral }` when the active profile hits `api.anthropic.com` with `x-api-key` auth. Proxies and custom-baseURL profiles send a plain string as before — they may reject `cache_control` blocks. Effect: ~90% reduction in input tokens for repeated calls within the 5-minute TTL window; cost drop is visible in the Anthropic usage dashboard on any workload with repeated mode use.
+- **Fix: Prompt mode effort restored to `xhigh`.** During v1.3.4 optimization work the `aiCommand` effort level was inadvertently lowered from `xhigh` to `high`. The Prompt mode system prompt is the most demanding in the codebase: multi-signal update-vs-new-project detection, 5-part structured output as flowing text, and eight simultaneous constraint rules (no meta-sentence, no code generation, no preamble, imperative voice, …). At `high` budget Opus 4.7 drops the lower-priority constraints and occasionally generates code instead of a prompt. Reverted to `xhigh`.
+- **Anti-inflation hint for Business mode.** Added explicit length constraint to the Business DE+EN system prompts: output should be roughly as long as the dictation, not longer. Prevents Opus 4.7's tendency to expand short inputs with boilerplate padding.
+- **Shape-based fixture tests.** `tests/mode-fixtures/` — input + expected-criteria files for all five LLM modes (Business, Plus, Rage, Emoji, Prompt). Run with `./tests/mode-fixtures/run-fixtures.sh`. Criteria: `contains`, `not-contains`, `max-length`, `min-length`, `no-preamble`, `no-markdown-headings`, `max-emojis`.
+
 ### v1.3.3 (2026-04-20)
 
 - **Fix: Settings → Hotkeys crash.** The SPM-generated `KeyboardShortcuts_KeyboardShortcuts.bundle` was never copied into the `.app` by `build-app.sh`. At runtime `Bundle.module` tripped `_assertionFailure` the instant `Settings → Hotkeys` tried to instantiate a shortcut recorder, and the app silently died with no error dialog. Build script now copies every `*.bundle` emitted next to the release binary into `Contents/Resources/`.

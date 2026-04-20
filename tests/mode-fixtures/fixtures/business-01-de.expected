@@ -1,0 +1,6 @@
+no-preamble
+no-markdown-headings
+not-contains: also
+not-contains: halt
+contains: Montag
+max-length: 500

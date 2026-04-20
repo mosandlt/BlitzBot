@@ -1,0 +1,1 @@
+Ich möchte in meiner bestehenden React-App einen Dark-Mode-Toggle einbauen, der den Status im LocalStorage speichert. Das CSS hab ich schon, ich brauch halt nur den Button und die Logik dafür, am besten in einer eigenen Komponente.

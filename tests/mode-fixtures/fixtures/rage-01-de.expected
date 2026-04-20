@@ -1,0 +1,7 @@
+no-preamble
+no-markdown-headings
+not-contains: verdammter
+not-contains: mist
+contains: deployment
+contains: pipeline
+max-length: 500

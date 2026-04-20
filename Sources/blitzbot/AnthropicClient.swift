@@ -47,9 +47,22 @@ struct AnthropicClient {
         var body: [String: Any] = [
             "model": model,
             "max_tokens": 2048,
-            "system": systemPrompt,
             "messages": [["role": "user", "content": text]]
         ]
+
+        // Prompt caching: only for Anthropic direct API with x-api-key. Proxies and custom
+        // baseURLs may reject `cache_control` blocks, so default to plain string there.
+        let isAnthropicDirect = baseURL == "https://api.anthropic.com" && authScheme == .apiKey
+        if isAnthropicDirect {
+            body["system"] = [[
+                "type": "text",
+                "text": systemPrompt,
+                "cache_control": ["type": "ephemeral"]
+            ]]
+        } else {
+            body["system"] = systemPrompt
+        }
+
         if model == "claude-opus-4-7", let effort = mode?.opusEffort {
             body["output_config"] = ["effort": effort]
         }

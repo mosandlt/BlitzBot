@@ -1,0 +1,1 @@
+ähm also ich hab mir überlegt dass wir das projekt eigentlich halt so aufteilen sollten dass ein teil sich um das backend kümmert und der andere teil halt um das frontend das ist sozusagen die saubere trennung finde ich
