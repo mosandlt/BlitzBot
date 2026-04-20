@@ -767,6 +767,11 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.3.3 (2026-04-20)
+
+- **Fix: Settings → Hotkeys crash.** The SPM-generated `KeyboardShortcuts_KeyboardShortcuts.bundle` was never copied into the `.app` by `build-app.sh`. At runtime `Bundle.module` tripped `_assertionFailure` the instant `Settings → Hotkeys` tried to instantiate a shortcut recorder, and the app silently died with no error dialog. Build script now copies every `*.bundle` emitted next to the release binary into `Contents/Resources/`.
+- **Fix: profile list silently emptied after v1.3.2 upgrade.** `ProfileStore.loadFromDisk` decoded the whole profiles array with `try?`; a single profile with the removed `appleIntelligence` provider made every remaining profile disappear from the UI. Loader now falls back to per-element decoding, keeps everything it can parse, drops only the unknown entries, rewrites the plist cleanly, and repairs `activeProfileID` if it pointed at a dropped profile. Keys stay in the Keychain, nothing to re-enter.
+
 ### v1.3.2 (2026-04-18)
 
 - **Apple Intelligence integration removed.** v1.3.0 added it as a provider and v1.3.1 made the Privacy wrap skip it. Empirical testing with five real prompts across Plus / Business / Rage / Emoji / Prompt / Office showed the on-device ~3B foundation model fails every LLM-backed mode: it ignores the system prompt, hallucinates fluently on absurd inputs, and loops on repetitive output. The provider was a marketing bullet without user-visible benefit, so it's out.

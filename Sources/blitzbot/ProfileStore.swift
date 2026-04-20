@@ -85,13 +85,40 @@ final class ProfileStore: ObservableObject {
     // MARK: - Persistence
 
     private func loadFromDisk() {
-        if let data = defaults.data(forKey: Self.profilesKey),
-           let decoded = try? JSONDecoder().decode([ConnectionProfile].self, from: data) {
-            profiles = decoded
+        if let data = defaults.data(forKey: Self.profilesKey) {
+            let decoder = JSONDecoder()
+            if let decoded = try? decoder.decode([ConnectionProfile].self, from: data) {
+                profiles = decoded
+            } else if let items = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+                // Per-element fallback: a single unknown provider (e.g. a removed
+                // enum case from a previous version) would otherwise wipe the whole
+                // list silently. Decode each element individually and skip failures.
+                var recovered: [ConnectionProfile] = []
+                var skipped = 0
+                for item in items {
+                    guard let itemData = try? JSONSerialization.data(withJSONObject: item) else {
+                        skipped += 1; continue
+                    }
+                    if let p = try? decoder.decode(ConnectionProfile.self, from: itemData) {
+                        recovered.append(p)
+                    } else {
+                        skipped += 1
+                    }
+                }
+                profiles = recovered
+                if skipped > 0 {
+                    Log.write("ProfileStore: recovered \(recovered.count) profile(s), skipped \(skipped) undecodable")
+                    persistProfiles() // rewrite the plist cleanly so it stops failing
+                }
+            }
         }
         if let raw = defaults.string(forKey: Self.activeKey),
            let uuid = UUID(uuidString: raw) {
             activeProfileID = uuid
+        }
+        // Active-ID can point at a profile that was just dropped — repair it.
+        if let id = activeProfileID, !profiles.contains(where: { $0.id == id }) {
+            activeProfileID = profiles.first?.id
         }
     }
 

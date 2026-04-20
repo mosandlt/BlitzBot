@@ -44,6 +44,14 @@ cp -R "$PROJECT_DIR/blitzbot.app/Contents/Info.plist" "$APP_DIR/Contents/"
 cp -R "$PROJECT_DIR/blitzbot.app/Contents/Resources" "$APP_DIR/Contents/"
 cp "$SWIFT_BUILD/release/blitzbot" "$APP_DIR/Contents/MacOS/blitzbot"
 
+# SPM ships per-target resource bundles next to the binary. They must live
+# inside the .app or Bundle.module traps with _assertionFailure at runtime
+# (e.g. KeyboardShortcuts.Recorder in Settings → Hotkeys).
+for bundle in "$SWIFT_BUILD/release/"*.bundle; do
+    [ -e "$bundle" ] || continue
+    cp -R "$bundle" "$APP_DIR/Contents/Resources/"
+done
+
 echo "→ codesign (identity: $IDENTITY)"
 codesign --force --deep --sign "$IDENTITY" "$APP_DIR"
 
