@@ -4,7 +4,7 @@ Lokale Speech-to-Text-App für macOS — diktieren statt tippen, systemweit in j
 
 **Inspiration**: Video *"Nie wieder Tippen! Meine eigene Speech-to-Text App (Claude Code)"* von Christoph Magnussen — https://www.youtube.com/watch?v=vVTl1dqPL0k. **Ziel**: eigene Variante bauen, nicht den Code kopieren.
 
-Release-Historie: `docs/CHANGELOG.md`. Workflow-Details ausgelagert in `.claude/skills/{build-deploy,dev-cert-regen,pre-push-scan}/SKILL.md`.
+Release-Historie: `docs/CHANGELOG.md`. Workflow-Details ausgelagert in `.claude/skills/{build-deploy,dev-cert-regen,pre-push-scan,release,usage-report}/SKILL.md`.
 
 ---
 
@@ -150,6 +150,8 @@ Hotkey → ModeProcessor.toggle → AudioRecorder → wav → WhisperTranscriber
 | `Paster.swift` | Cmd+V via CGEvent (nonactivating) |
 | `Log.swift` | `~/.blitzbot/logs/blitzbot.log` append-only |
 | `Updater.swift` | GitHub-Releases-API-Check + In-place-Install |
+| `LaunchAtLoginManager.swift` | `SMAppService.mainApp`-Wrapper für den Login-Item-Toggle in Settings → Allgemein |
+| `ModelDownloader.swift` | In-App Whisper-Modell-Download von HuggingFace, Progress + Cancel + GGUF-Magic-Verify |
 
 `blitzbot.app/Contents/Info.plist` — Bundle-ID `de.blitzbot.app`, CFBundleLocalizations. Activation-Policy wird programmatisch in `applicationWillFinishLaunching` auf `.accessory` gesetzt.
 
@@ -203,5 +205,4 @@ Release-Historie komplett: `docs/CHANGELOG.md`.
 - Multi-Mic-Selector
 - Translate-Modus (Diktat A → Output B)
 - iOS-App testen + releasen
-- Launch-at-Login Toggle via SMAppService
 - Apple Intelligence re-evaluieren, falls Apple größeres on-device Modell liefert

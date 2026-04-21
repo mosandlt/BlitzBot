@@ -4,6 +4,7 @@ Für die aktuelle Version siehe `CLAUDE.md` → *Aktueller Stand*. GitHub-Releas
 
 | Version | Datum | Kernänderung |
 |---|---|---|
+| v1.3.5 | 2026-04-21 | Launch-at-Login-Toggle (SMAppService) + In-App Whisper-Modell-Download (Progress + Cancel + GGUF-Verify) + Smoke-Test-Script + `release`- und `usage-report`-Skills. |
 | v1.3.4 | 2026-04-20 | Prompt-caching für Anthropic-direkte Calls (`cache_control: ephemeral`), Effort-Fix Prompt-Mode (`xhigh` statt `high`), Anti-Inflation-Hint für Business-Modus, CLAUDE.md-Prune (-48%), Shape-Fixture-Tests für alle LLM-Modi, Skills extrahiert. |
 | v1.3.3 | 2026-04-19 | Settings-Crash-Fix + resilient Profile-Decode |
 | v1.3.2 | 2026-04-18 | **Apple Intelligence wieder raus**. v1.3.0/v1.3.1-Integration entfernt nach Live-Tests: 3B-Modell halluziniert / ignoriert System-Prompt in allen LLM-Modi. Privacy-Skip für Ollama bleibt (nützlich, unabhängig). Für lokale größere Modelle → Ollama + Qwen/Llama 14B+. |

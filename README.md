@@ -317,10 +317,10 @@ On first launch blitzbot opens a **Setup window** that walks you through four ch
 
 1. **Microphone** — required
 2. **Accessibility** — required (for the Cmd+V paste simulation)
-3. **Whisper binary** — must exist
-4. **Whisper model** — must exist
+3. **Whisper binary** — must exist (opens a Terminal snippet for `brew install whisper-cpp` if missing)
+4. **Whisper model** — must exist. If it's missing, click **Jetzt laden** and blitzbot downloads `ggml-large-v3-turbo.bin` (~1.5 GB) directly into `~/.blitzbot/models/` — no Terminal needed. The download sheet shows live progress and can be cancelled.
 
-Green checkmarks everywhere? Click *Continue*. Something red? Click the button next to it to open the relevant macOS Settings pane. If you close the window prematurely, reopen it via **Settings → Setup**.
+Green checkmarks everywhere? Click *Continue*. Something red? Click the button next to it. If you close the window prematurely, reopen it via **Settings → Setup**.
 
 ### API key / connection profile
 
@@ -387,7 +387,7 @@ Seven tabs under **⚙ Settings**:
 
 | Tab         | What's inside |
 |-------------|---------------|
-| **General**     | Output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path. Active profile name shown with a quick link to the Profile tab. |
+| **General**     | Launch-at-Login toggle (SMAppService — blitzbot starts with your Mac), output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path. Active profile name shown with a quick link to the Profile tab. |
 | **Profile**     | Connection profiles — add, edit, delete, import/export, scan for local configs. Quick-switcher chips. Model list per profile. See [Connection profiles](#connection-profiles). |
 | **Hotkeys**     | One recorder field per mode. Click, press keys. Defaults shown. |
 | **Prompts**     | Editable system prompt per mode. Leave empty = language-aware default. Add text to either *replace* or *append* to the default (toggle per mode). |
@@ -605,7 +605,27 @@ Sources/blitzbot/
                              result preview, copy-to-clipboard. Calls LLMRouter directly.
   SelectionRewriter.swift   ⌘⌥0 hotkey — reads AX selection, rewrites via LLM, pastes back
   Updater.swift             GitHub Releases API check + download + install
+  LaunchAtLoginManager.swift  SMAppService.mainApp wrapper — register/unregister as Login Item,
+                             surfaces .requiresApproval state so the toggle can't lie
+  ModelDownloader.swift     streams ggml-large-v3-turbo.bin from HuggingFace into
+                             ~/.blitzbot/models/ with progress, cancel, and GGUF-magic verify
 ```
+
+### Skills & tooling
+
+Claude-Code skills shipped in `.claude/skills/`:
+
+- `build-deploy` — rebuild + deploy to `/Applications`, auto-runs `tools/smoke-test.sh` for log verification
+- `release` — guided release flow (version bump → build → tag → pause for user go → push + `gh release create` with bilingual notes)
+- `usage-report` — on-demand dictation stats via `tools/usage-report.py` (per-mode counts, P50/P95 latency, language split)
+- `pre-push-scan` — mechanical secrets/PII scan before every push
+- `dev-cert-regen` — rebuild `blitzbot-dev` code-signing cert if lost
+
+Scripts in `tools/`:
+
+- `smoke-test.sh` — checks the log for the four startup markers after deploy
+- `usage-report.py` — parses `~/.blitzbot/logs/blitzbot.log` and prints a text or JSON summary
+- `make-icon.swift` — regenerates the app icon
 
 ### Working conventions
 
@@ -766,6 +786,12 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.3.5 (2026-04-21)
+
+- **Launch-at-Login toggle** under Settings → General. Uses `SMAppService.mainApp` so blitzbot starts with your Mac and stays as the menu-bar icon (no Dock icon). The toggle reflects the real system state, including macOS's `.requiresApproval` case with a deep-link button to open System Settings → General → Login Items.
+- **In-app Whisper model download**. The first-launch Setup window now has a **Jetzt laden** button next to the Whisper-Modell row. It streams `ggml-large-v3-turbo.bin` (~1.5 GB) from HuggingFace directly into `~/.blitzbot/models/` with live progress, cancel, and a GGUF-magic-byte sanity check. No more Terminal detour for new users; `setup-whisper.sh` stays available for power users.
+- **Tooling**: `tools/smoke-test.sh` (verifies four startup markers + panic patterns in the log after every deploy) and `tools/usage-report.py` (per-mode dictation counts, P50/P95 latency, language split, incomplete sessions — on-demand, no cron). New Claude-Code skills `release` (guided release pipeline with user-go before push) and `usage-report`. Existing `build-deploy` skill now auto-runs the smoke test.
 
 ### v1.3.4 (2026-04-20)
 

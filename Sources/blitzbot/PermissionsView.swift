@@ -5,6 +5,9 @@ struct PermissionsView: View {
     @EnvironmentObject var config: AppConfig
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var modelDownloader = ModelDownloader()
+    @State private var showingModelDownload = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
@@ -31,13 +34,13 @@ struct PermissionsView: View {
                 subtitle: config.whisperBinary,
                 state: checker.whisperBinary,
                 actionTitle: "Terminal",
-                action: copySetupCommand)
+                action: copyBinarySetupCommand)
 
             row(title: "Whisper-Modell",
-                subtitle: config.whisperModel,
+                subtitle: modelSubtitle,
                 state: checker.whisperModel,
-                actionTitle: "Terminal",
-                action: copySetupCommand)
+                actionTitle: "Jetzt laden",
+                action: openModelDownload)
 
             Divider()
 
@@ -52,6 +55,25 @@ struct PermissionsView: View {
         .padding(24)
         .frame(width: 520)
         .onAppear { checker.refresh(config: config) }
+        .sheet(isPresented: $showingModelDownload) {
+            ModelDownloadSheet(downloader: modelDownloader) {
+                // Completion callback: refresh permissions so "Whisper-Modell" turns green.
+                checker.refresh(config: config)
+                showingModelDownload = false
+            }
+        }
+    }
+
+    private var modelSubtitle: String {
+        if checker.whisperModel == .ok {
+            return config.whisperModel
+        }
+        return "\(config.whisperModel) — ~1.5 GB Download"
+    }
+
+    private func openModelDownload() {
+        showingModelDownload = true
+        Task { await modelDownloader.check() }
     }
 
     private func row(title: String, subtitle: String, state: PermissionsChecker.State,
@@ -103,10 +125,130 @@ struct PermissionsView: View {
         checker.refresh(config: config)
     }
 
-    private func copySetupCommand() {
+    private func copyBinarySetupCommand() {
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString("cd \"$(dirname \"$0\")\" && ./setup-whisper.sh", forType: .string)
+        pb.setString("brew install whisper-cpp", forType: .string)
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+    }
+}
+
+/// Modal sheet that streams the Whisper model into place with a progress bar
+/// and a single cancel button. Dismisses itself via the `onFinish` callback
+/// once the downloader reports `.done`.
+private struct ModelDownloadSheet: View {
+    @ObservedObject var downloader: ModelDownloader
+    let onFinish: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Whisper-Modell laden").font(.title3.bold())
+                    Text("ggml-large-v3-turbo · ~1.5 GB · HuggingFace").font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Divider()
+
+            content
+
+            Divider()
+
+            HStack {
+                Spacer()
+                footerButtons
+            }
+        }
+        .padding(22)
+        .frame(width: 480)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch downloader.state {
+        case .idle, .checking:
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Prüfe Server …").font(.callout)
+            }
+        case .needsDownload(let bytes):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Bereit zum Download.").font(.callout)
+                if bytes > 0 {
+                    Text(formatSize(bytes))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Der Download läuft solange dieses Fenster offen ist. Wenn du abbrichst, wird die Teildatei verworfen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .downloading(let done, let total):
+            VStack(alignment: .leading, spacing: 8) {
+                if total > 0 {
+                    ProgressView(value: Double(done), total: Double(total))
+                    Text("\(formatSize(done)) von \(formatSize(total))")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .monospacedDigit()
+                } else {
+                    ProgressView()
+                    Text(formatSize(done))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        case .verifying:
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Prüfe Datei …").font(.callout)
+            }
+        case .done:
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Modell geladen.").fontWeight(.medium)
+            }
+        case .error(let msg):
+            VStack(alignment: .leading, spacing: 6) {
+                Label(msg, systemImage: "xmark.octagon.fill")
+                    .foregroundStyle(.red)
+                Text("Du kannst es erneut versuchen oder das Modell manuell nach \(downloader.destinationPath) legen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var footerButtons: some View {
+        switch downloader.state {
+        case .idle, .checking, .verifying:
+            Button("Abbrechen") { onFinish() }
+        case .needsDownload:
+            Button("Abbrechen") { onFinish() }
+            Button("Download starten") { downloader.startDownload() }
+                .buttonStyle(.borderedProminent)
+        case .downloading:
+            Button("Abbrechen") {
+                downloader.cancel()
+                onFinish()
+            }
+        case .done:
+            Button("Fertig") { onFinish() }
+                .buttonStyle(.borderedProminent)
+        case .error:
+            Button("Schließen") { onFinish() }
+            Button("Erneut versuchen") { downloader.startDownload() }
+                .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func formatSize(_ bytes: Int64) -> String {
+        let fmt = ByteCountFormatter()
+        fmt.countStyle = .file
+        return fmt.string(fromByteCount: bytes)
     }
 }

@@ -238,6 +238,23 @@ struct SettingsView: View {
         newWord = ""
     }
 
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            launchAtLoginEnabled = try LaunchAtLoginManager.setEnabled(enabled)
+            launchAtLoginRequiresApproval = LaunchAtLoginManager.requiresApproval
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = error.localizedDescription
+            Log.write("LaunchAtLogin: setEnabled(\(enabled)) failed: \(error)")
+            refreshLaunchAtLoginState()
+        }
+    }
+
+    private func refreshLaunchAtLoginState() {
+        launchAtLoginEnabled = LaunchAtLoginManager.isEnabled
+        launchAtLoginRequiresApproval = LaunchAtLoginManager.requiresApproval
+    }
+
     private var setup: some View {
         VStack(spacing: 12) {
             Text("Berechtigungen & Installation")
@@ -261,8 +278,46 @@ struct SettingsView: View {
         .padding()
     }
 
+    @State private var launchAtLoginEnabled: Bool = LaunchAtLoginManager.isEnabled
+    @State private var launchAtLoginError: String?
+    @State private var launchAtLoginRequiresApproval: Bool = LaunchAtLoginManager.requiresApproval
+
     private var general: some View {
         Form {
+            Section("System") {
+                Toggle(isOn: Binding(
+                    get: { launchAtLoginEnabled },
+                    set: { setLaunchAtLogin($0) }
+                )) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "power.circle.fill")
+                            .foregroundStyle(launchAtLoginEnabled ? .green : .secondary)
+                        Text("Beim Anmelden automatisch starten")
+                            .fontWeight(.medium)
+                    }
+                }
+                .onAppear { refreshLaunchAtLoginState() }
+                Text("blitzbot startet beim nächsten Login automatisch und bleibt als Menüleisten-Icon oben rechts verfügbar. Kein Dock-Icon.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if launchAtLoginRequiresApproval {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("macOS wartet auf Bestätigung in Systemeinstellungen → Allgemein → Anmeldeobjekte.")
+                            .font(.caption)
+                        Button("Öffnen") {
+                            LaunchAtLoginManager.openLoginItemsSettings()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                if let err = launchAtLoginError {
+                    Label(err, systemImage: "xmark.octagon.fill")
+                        .foregroundStyle(.red).font(.caption)
+                }
+            }
+
             Section("LLM") {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle").foregroundStyle(.secondary)
