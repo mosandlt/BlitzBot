@@ -354,6 +354,7 @@ During recording, a floating panel shows up in the middle of your screen:
 - **Top-left**: X cancel button (aborts recording without pasting) + mode icon + name
 - **Top-right**: elapsed time (`mm:ss`, monospaced)
 - **Controls row**: Pause / Resume button (left) + Auto-Stop countdown clock with draining ring (right, only visible when auto-stop is running)
+- **Live transcript box**: scrollable text area at the top of the HUD — shows your words appearing in real time as you speak, powered by Apple's `SpeechTranscriber` (macOS 26+, 16-core ANE). Finalized words are shown in normal weight; the in-flight tail is dimmed. Auto-scrolls to the latest word. Visible as soon as recording starts. Can be disabled in Settings → General. The final pasted text always comes from whisper-cli (higher accuracy); this is visual feedback only.
 - **Middle**: full-width real audio waveform — draws actual PCM samples from the mic, scrolling in real-time. Always yellow during recording; grey when idle. A small **"Stimme erkannt"** badge fades in when voice is detected.
 - **Silence banner**: fades in after 5 seconds of continuous silence with countdown to auto-stop (disappears smoothly when you resume speaking, no layout jumps)
 - **Status line**: *Recording… → Pausiert → Transkribiere… → Formuliere… → Fertig*
@@ -624,6 +625,9 @@ Sources/blitzbot/
   RecordingHUD.swift        NSPanel + SwiftUI content for the floating recording HUD.
                              Renders the inline recovery UI (profile picker + countdown) when
                              `ModeProcessor.Status` is `.recovery`.
+  LiveTranscriber.swift     Apple SpeechTranscriber (macOS 26+) wrapper — feeds PCM buffers from
+                             the AVAudioEngine tap into SpeechAnalyzer and streams LivePartial
+                             (confirmed + volatile text) back to the HUD in real time.
   OfficeView.swift          Office Mode window — dropzone, text editor, Verarbeiten button,
                              result preview, copy-to-clipboard. Calls LLMRouter directly.
   SelectionRewriter.swift   ⌘⌥0 hotkey — reads AX selection, rewrites via LLM, pastes back
@@ -799,7 +803,6 @@ If you want to take this on: fork or open an issue, propose the spike, and we'll
 
 - [ ] Apple notarization (removes first-launch Gatekeeper workaround for end users)
 - [ ] Universal binary (arm64 + x86_64)
-- [ ] Streaming transcription with interim text in the HUD (parked — recording-length data doesn't justify the WhisperKit refactor yet)
 - [ ] Shortcuts.app integration (AppIntents — "Dictate now in mode X")
 
 Got other ideas? Open an issue.
@@ -807,6 +810,11 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.4.1 (2026-04-22)
+
+- **Live transcription in the HUD** — while you speak, your words appear in real time in a scrollable transcript box at the top of the recording HUD. Powered by Apple's `SpeechTranscriber` (macOS 26+, requires 16-core ANE / Apple Silicon M-series). Enable or disable in Settings → General → Live-Transkription. The final pasted text always comes from whisper-cli (better accuracy); the live view is visual feedback only so you're never staring at a blank screen.
+- **HUD layout fixes** — transcript box height 44→80 pt (fits ~5-6 lines), auto-scrolls to the latest word as you speak, visible immediately when recording starts (no jump on first word). Panel height 300→380 pt so the mode pills at the bottom are no longer clipped.
 
 ### v1.4.0 (2026-04-22)
 

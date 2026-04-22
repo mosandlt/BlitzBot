@@ -55,6 +55,11 @@ final class ModeProcessor: ObservableObject {
                 processingStartedAt = nil
                 activeProviderLabel = nil
             }
+            // Live partial belongs to the recording phase only.
+            if status != .aufnahme {
+                livePartial = .empty
+                Task { await liveTranscriber.stop() }
+            }
         }
     }
     @Published var activeMode: Mode?
@@ -91,8 +96,16 @@ final class ModeProcessor: ObservableObject {
     /// Provider name shown in the HUD during the LLM step (e.g. "Anthropic", "Ollama").
     /// Set when entering `.formuliert`, cleared on terminal status.
     @Published var activeProviderLabel: String?
+    /// Live partial transcript snapshot from Apple's macOS-26 SpeechTranscriber.
+    /// Empty when the live engine is disabled, unavailable, or the recording
+    /// hasn't produced any text yet. Cleared on stop so it doesn't bleed into
+    /// the next session.
+    @Published var livePartial: LivePartial = .empty
 
     let recorder = AudioRecorder()
+    /// nonisolated so the audio-thread tap closure can call `feed` without a
+    /// MainActor hop (which crashes via `dispatch_assert_queue_fail`).
+    nonisolated let liveTranscriber = LiveTranscriberManager()
     private var isRecording = false
     private var isProcessing = false      // reentrancy guard for stopAndProcess
     private var startedAt: Date?
@@ -142,7 +155,7 @@ final class ModeProcessor: ObservableObject {
         isPaused = false
         autoExecute = false
         activeMode = nil
-        status = .bereit
+        status = .bereit   // didSet stops the live transcriber and clears livePartial
     }
 
     func pauseRecording(config: AppConfig) {
@@ -184,6 +197,7 @@ final class ModeProcessor: ObservableObject {
             isRecording = true
             autoStopTimeoutForDisplay = config.autoStopTimeout
             status = .aufnahme
+            startLiveTranscriptionIfEnabled(config: config)
             let now = Date()
             startedAt = now
             elapsed = 0
@@ -501,6 +515,36 @@ final class ModeProcessor: ObservableObject {
                                           autoReturn: autoReturn,
                                           config: config,
                                           profileOverride: profile)
+        }
+    }
+
+    // MARK: - Live transcription
+
+    /// Spawns Apple's `SpeechTranscriber` and wires it to the audio recorder's
+    /// buffer tap. No-op when disabled in Settings or when the runtime isn't
+    /// macOS 26 + 16-core ANE — recording continues unaffected.
+    private func startLiveTranscriptionIfEnabled(config: AppConfig) {
+        guard config.liveTranscriptionEnabled, liveTranscriber.isHardwareCapable else { return }
+        let locale = liveLocale(for: config)
+        Task { [weak self] in
+            guard let self else { return }
+            await self.liveTranscriber.start(locale: locale) { [weak self] partial in
+                self?.livePartial = partial
+            }
+        }
+        recorder.bufferTap = { [weak self] buffer, time in
+            self?.liveTranscriber.feed(buffer, time: time)
+        }
+    }
+
+    /// Apple's `SpeechTranscriber` is locale-bound (no auto-detect). We follow
+    /// the user's output-language preference; on Auto we default to German
+    /// since that's the primary dictation language in practice. Whisper's
+    /// auto-detect on the final pass still routes correctly either way.
+    private func liveLocale(for config: AppConfig) -> String {
+        switch config.outputLanguage {
+        case .en: return "en-US"
+        case .de, .auto: return "de-DE"
         }
     }
 

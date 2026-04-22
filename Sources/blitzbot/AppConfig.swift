@@ -130,6 +130,14 @@ final class AppConfig: ObservableObject {
         didSet { defaults.set(holdToTalk, forKey: "holdToTalk") }
     }
 
+    /// Show Apple `SpeechTranscriber` partial text in the HUD while recording.
+    /// macOS 26+ + 16-core ANE only — silently no-op on older OS / 8-core-ANE
+    /// hardware. The final paste-text always comes from whisper-cli; this is
+    /// purely visual feedback during the recording phase.
+    @Published var liveTranscriptionEnabled: Bool {
+        didSet { defaults.set(liveTranscriptionEnabled, forKey: "liveTranscriptionEnabled") }
+    }
+
     /// Preferred microphone (Core Audio device UID). nil = follow system default.
     /// Resolved to a live AudioDeviceID at recording start; if the device is gone,
     /// AudioRecorder falls back to system default silently.
@@ -155,7 +163,8 @@ final class AppConfig: ObservableObject {
         // leaves the machine; users who want the pre-v1.2.2 behavior can flip
         // it off in Settings → Allgemein → Privacy (their choice is persisted).
         UserDefaults.standard.register(defaults: [
-            "privacyMode": true
+            "privacyMode": true,
+            "liveTranscriptionEnabled": true   // gated at runtime by ANE + macOS 26
         ])
 
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -234,6 +243,7 @@ final class AppConfig: ObservableObject {
         // Existing installs that had it explicitly turned off keep their setting.
         self.privacyMode = defaults.bool(forKey: "privacyMode")
         self.holdToTalk = defaults.bool(forKey: "holdToTalk")
+        self.liveTranscriptionEnabled = defaults.bool(forKey: "liveTranscriptionEnabled")
         self.preferredMicUID = defaults.string(forKey: "preferredMicUID")
         // Custom anonymization terms (persistent, separate from the session mapping).
         // Read once into a local to avoid "self used before all stored properties

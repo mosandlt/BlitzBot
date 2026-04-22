@@ -4,6 +4,7 @@ Für die aktuelle Version siehe `CLAUDE.md` → *Aktueller Stand*. GitHub-Releas
 
 | Version | Datum | Kernänderung |
 |---|---|---|
+| v1.4.1 | 2026-04-22 | **Live-Transkription** im HUD während der Aufnahme (Apple SpeechTranscriber, macOS 26+ / 16-core ANE): Text erscheint Wort für Wort, scrollt automatisch, Toggle in Settings → Allgemein. HUD-Transcript-Box sofort sichtbar + Panel-Höhe 300→380pt (Modi-Pills nicht mehr abgeschnitten). |
 | v1.4.0 | 2026-04-22 | Neuer **Translate-Modus** (#7, ⌘⌥7, DE↔EN Auto-Flip), **Hold-to-Talk** als Hotkey-Trigger-Alternative, **Whisper-Modell-Picker** in Settings (kuratierte Liste mit Auto-Download + Auto-Cleanup alter Modelle), **Multi-Mic-Selector** (Core Audio Enumeration), **HUD-Progress** mit Spinner + Live-Timer + Provider-Name während LLM-Call, **Whisper-Decoding-Stabilität** (`--no-fallback` etc. — stoppt kreatives Re-Decoding), **Recovery-Fix** (WAV-Header-Repair für mid-recording Kills), **Startup-Timing-Log-Marker**. |
 | v1.3.5 | 2026-04-21 | Launch-at-Login-Toggle (SMAppService) + In-App Whisper-Modell-Download (Progress + Cancel + GGUF-Verify) + Smoke-Test-Script + `release`- und `usage-report`-Skills. |
 | v1.3.4 | 2026-04-20 | Prompt-caching für Anthropic-direkte Calls (`cache_control: ephemeral`), Effort-Fix Prompt-Mode (`xhigh` statt `high`), Anti-Inflation-Hint für Business-Modus, CLAUDE.md-Prune (-48%), Shape-Fixture-Tests für alle LLM-Modi, Skills extrahiert. |

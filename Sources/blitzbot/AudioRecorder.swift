@@ -6,6 +6,10 @@ final class AudioRecorder: ObservableObject {
     private let engine = AVAudioEngine()
     private var file: AVAudioFile?
     private(set) var currentURL: URL?
+    /// Optional second consumer of every captured PCM buffer. ModeProcessor
+    /// installs this to feed Apple's live SpeechTranscriber alongside the WAV
+    /// writer. nil = no live transcription, default behavior unchanged.
+    var bufferTap: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
     @Published var level: Float = 0
     /// Rolling ring buffer of normalized PCM samples for waveform rendering.
     /// Always 300 entries, oldest first, values in [-1, 1].
@@ -53,7 +57,7 @@ final class AudioRecorder: ObservableObject {
         let converter = AVAudioConverter(from: inputFormat,
                                          to: outFile.processingFormat)!
 
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, when in
             guard let self, let file = self.file else { return }
             let ratio = outFile.processingFormat.sampleRate / inputFormat.sampleRate
             let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
@@ -68,6 +72,9 @@ final class AudioRecorder: ObservableObject {
                 try? file.write(from: out)
             }
             self.publishLevel(from: buffer)
+            // Fan out the raw input buffer to the optional live transcriber.
+            // Apple's analyzer wants its own format; the wrapper converts.
+            self.bufferTap?(buffer, when)
         }
 
         engine.prepare()
@@ -79,6 +86,7 @@ final class AudioRecorder: ObservableObject {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         file = nil
+        bufferTap = nil
         let url = currentURL
         currentURL = nil
         DispatchQueue.main.async {

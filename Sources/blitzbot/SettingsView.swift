@@ -289,6 +289,116 @@ struct SettingsView: View {
 
     private var general: some View {
         Form {
+            // ── 1. Aktives Profil — kompakte Info, Verlinkung zum Profile-Tab ───
+            Section("Aktives Profil") {
+                HStack {
+                    if let active = config.profileStore.activeProfile {
+                        Image(systemName: "person.circle.fill").foregroundStyle(.blue)
+                        Text(active.name).fontWeight(.medium)
+                        Text("· \(active.provider.displayName)")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text("Keines — Legacy-Fallback aktiv")
+                            .foregroundStyle(.orange)
+                    }
+                    Spacer()
+                    Button("Profile öffnen") { selectTab(.profiles) }
+                        .controlSize(.small)
+                }
+                Text("Provider, API-Keys und Modelle werden im Tab **Profile** verwaltet.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            // ── 2. Aufnahme — Mikro + Auto-Stop ─────────────────────────────────
+            Section("Aufnahme") {
+                micPicker
+                Divider().padding(.vertical, 4)
+                Toggle("Auto-Stop bei Stille", isOn: $config.autoStopEnabled)
+                    .onChange(of: config.autoStopEnabled) { _ in config.save() }
+                if config.autoStopEnabled {
+                    Picker("Timeout", selection: $config.autoStopTimeout) {
+                        Text("10 Sekunden").tag(TimeInterval(10))
+                        Text("20 Sekunden").tag(TimeInterval(20))
+                        Text("30 Sekunden").tag(TimeInterval(30))
+                        Text("45 Sekunden").tag(TimeInterval(45))
+                        Text("1 Minute").tag(TimeInterval(60))
+                        Text("2 Minuten").tag(TimeInterval(120))
+                    }
+                    .onChange(of: config.autoStopTimeout) { _ in config.save() }
+                    Text("Stille innerhalb eines Satzes setzt den Timer zurück, sobald du wieder sprichst.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            // ── 3. Transkription — Live + Final + Sprache ───────────────────────
+            Section("Transkription") {
+                Toggle("Live-Vorschau im HUD anzeigen (Apple SpeechTranscriber)",
+                       isOn: $config.liveTranscriptionEnabled)
+                    .onChange(of: config.liveTranscriptionEnabled) { _ in config.save() }
+                Text(liveTranscriptionHelp)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Divider().padding(.vertical, 4)
+                whisperModelPicker
+                HStack {
+                    Text("Whisper-Binary").frame(width: 110, alignment: .leading)
+                    TextField("/opt/homebrew/bin/whisper-cli", text: $config.whisperBinary)
+                        .onSubmit { config.save() }
+                }
+                Divider().padding(.vertical, 4)
+                Picker("Ausgabesprache", selection: $config.outputLanguage) {
+                    Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
+                    Text("Deutsch").tag(OutputLanguage.de)
+                    Text("English").tag(OutputLanguage.en)
+                }
+                .pickerStyle(.menu)
+                .onChange(of: config.outputLanguage) { _ in config.save() }
+                Text("Bei Auto entscheidet Whisper anhand der Aufnahme. Bei manueller Wahl wird die Transkription und LLM-Ausgabe erzwungen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // ── 4. Privacy — vor jedem LLM-Call ────────────────────────────────
+            Section("Privacy") {
+                Toggle(isOn: $config.privacyMode) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundStyle(config.privacyMode ? .green : .secondary)
+                        Text("Privacy Mode").fontWeight(.medium)
+                    }
+                }
+                Text("Ausgehender Text wird lokal durchsucht (NLTagger + NSDataDetector + Regex) und erkannte Namen, Firmennamen, Orte, E-Mails, IPs, URLs und Telefonnummern werden vor dem Versand an die KI durch neutrale Platzhalter (z. B. `[NAME_1]`, `[UNTERNEHMEN_1]`) ersetzt. Die Antwort der KI wird anhand derselben Mapping-Tabelle zurückübersetzt, bevor sie bei dir landet.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Die Zuordnung lebt nur im Arbeitsspeicher und wird beim Deaktivieren sowie beim App-Beenden verworfen. Es wird nichts auf Disk geschrieben. Die Erkennung selbst läuft zu 100 % lokal über macOS-System-Frameworks — kein externer API-Call.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if config.privacyMode {
+                    PrivacyEngineStatusRow(engine: config.privacyEngine)
+                    PrivacyMappingInlineList(engine: config.privacyEngine)
+                }
+                Divider().padding(.vertical, 4)
+                PrivacyCustomTermsEditor()
+            }
+
+            // ── 5. Selektion umschreiben — non-voice Hotkey-Workflow ────────────
+            Section("Selektion umschreiben (⌘⌥0)") {
+                HStack {
+                    Text("Hotkey").frame(width: 110, alignment: .leading)
+                    KeyboardShortcuts.Recorder(for: .rewriteSelection)
+                }
+                Picker("Default-Modus", selection: $config.serviceDefaultMode) {
+                    ForEach(Mode.allCases.filter { $0 != .normal && $0 != .officeMode }) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                Text("Markiere Text in einer beliebigen App, drücke den Hotkey — blitzbot liest die Auswahl, schreibt sie im Default-Modus um und fügt das Ergebnis zurück ein. Funktioniert in jeder App die Accessibility unterstützt. Als Fallback wird ⌘C simuliert und danach die Zwischenablage wiederhergestellt.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // ── 6. System — Login-Item, selten geändert, deshalb am Ende ───────
             Section("System") {
                 Toggle(isOn: Binding(
                     get: { launchAtLoginEnabled },
@@ -297,8 +407,7 @@ struct SettingsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "power.circle.fill")
                             .foregroundStyle(launchAtLoginEnabled ? .green : .secondary)
-                        Text("Beim Anmelden automatisch starten")
-                            .fontWeight(.medium)
+                        Text("Beim Anmelden automatisch starten").fontWeight(.medium)
                     }
                 }
                 .onAppear { refreshLaunchAtLoginState() }
@@ -321,105 +430,6 @@ struct SettingsView: View {
                     Label(err, systemImage: "xmark.octagon.fill")
                         .foregroundStyle(.red).font(.caption)
                 }
-            }
-
-            Section("LLM") {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle").foregroundStyle(.secondary)
-                    Text("Provider, API-Keys und Modelle werden im Tab **Profile** verwaltet.")
-                        .font(.caption)
-                }
-                HStack {
-                    Text("Aktives Profil").frame(width: 110, alignment: .leading)
-                    if let active = config.profileStore.activeProfile {
-                        Text(active.name).fontWeight(.medium)
-                        Text("· \(active.provider.displayName)")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Keines — Legacy-Fallback aktiv")
-                            .foregroundStyle(.orange)
-                    }
-                    Spacer()
-                    Button("Profile öffnen") { selectTab(.profiles) }
-                        .controlSize(.small)
-                }
-            }
-
-            Section("Privacy") {
-                Toggle(isOn: $config.privacyMode) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lock.shield.fill")
-                            .foregroundStyle(config.privacyMode ? .green : .secondary)
-                        Text("Privacy Mode")
-                            .fontWeight(.medium)
-                    }
-                }
-                Text("Ausgehender Text wird lokal durchsucht (NLTagger + NSDataDetector + Regex) und erkannte Namen, Firmennamen, Orte, E-Mails, IPs, URLs und Telefonnummern werden vor dem Versand an die KI durch neutrale Platzhalter (z. B. `[NAME_1]`, `[UNTERNEHMEN_1]`) ersetzt. Die Antwort der KI wird anhand derselben Mapping-Tabelle zurückübersetzt, bevor sie bei dir landet.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Die Zuordnung lebt nur im Arbeitsspeicher und wird beim Deaktivieren sowie beim App-Beenden verworfen. Es wird nichts auf Disk geschrieben. Die Erkennung selbst läuft zu 100 % lokal über macOS-System-Frameworks — kein externer API-Call.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if config.privacyMode {
-                    PrivacyEngineStatusRow(engine: config.privacyEngine)
-                    PrivacyMappingInlineList(engine: config.privacyEngine)
-                }
-                Divider().padding(.vertical, 4)
-                PrivacyCustomTermsEditor()
-            }
-
-            Section("Ausgabesprache / Output Language") {                Picker("Sprache", selection: $config.outputLanguage) {
-                    Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
-                    Text("Deutsch").tag(OutputLanguage.de)
-                    Text("English").tag(OutputLanguage.en)
-                }
-                .pickerStyle(.radioGroup)
-                .onChange(of: config.outputLanguage) { _ in config.save() }
-                Text("Bei Auto entscheidet Whisper anhand der Aufnahme. Bei manueller Wahl wird die Transkription und Claude-Ausgabe erzwungen.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Section("Text umschreiben (Hotkey, ohne Stimme)") {
-                HStack {
-                    Text("Hotkey").frame(width: 90, alignment: .leading)
-                    KeyboardShortcuts.Recorder(for: .rewriteSelection)
-                }
-                Picker("Default-Modus", selection: $config.serviceDefaultMode) {
-                    ForEach(Mode.allCases.filter { $0 != .normal && $0 != .officeMode }) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                Text("Markiere Text in einer beliebigen App, drücke den Hotkey — blitzbot liest die Auswahl, schreibt sie im Default-Modus um und fügt das Ergebnis zurück ein. Funktioniert in jeder App die Accessibility unterstützt. Als Fallback wird ⌘C simuliert und danach die Zwischenablage wiederhergestellt.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Section("Auto-Stop bei Inaktivität") {
-                Toggle("Automatisch stoppen wenn keine Sprache erkannt wird", isOn: $config.autoStopEnabled)
-                    .onChange(of: config.autoStopEnabled) { _ in config.save() }
-                if config.autoStopEnabled {
-                    Picker("Timeout", selection: $config.autoStopTimeout) {
-                        Text("10 Sekunden").tag(TimeInterval(10))
-                        Text("20 Sekunden").tag(TimeInterval(20))
-                        Text("30 Sekunden").tag(TimeInterval(30))
-                        Text("45 Sekunden").tag(TimeInterval(45))
-                        Text("1 Minute").tag(TimeInterval(60))
-                        Text("2 Minuten").tag(TimeInterval(120))
-                    }
-                    .onChange(of: config.autoStopTimeout) { _ in config.save() }
-                    Text("Stille innerhalb eines Satzes setzt den Timer zurück, sobald du wieder sprichst.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Section("Mikrofon") {
-                micPicker
-            }
-            Section("Whisper") {
-                HStack {
-                    Text("Binary").frame(width: 60, alignment: .leading)
-                    TextField("/opt/homebrew/bin/whisper-cli", text: $config.whisperBinary)
-                        .onSubmit { config.save() }
-                }
-                whisperModelPicker
             }
         }
         .formStyle(.grouped)
@@ -501,6 +511,13 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var liveTranscriptionHelp: String {
+        if #available(macOS 26.0, *) {
+            return "Zeigt deinen Text live im HUD an, während du sprichst (Apple SpeechTranscriber, lokal). Der finale Text fürs Einfügen kommt unverändert von Whisper. Braucht ein Apple-Silicon-Gerät mit 16-Core-ANE (M1+)."
+        }
+        return "Erfordert macOS 26 oder neuer. Auf älteren Systemen unsichtbar — Whisper-Transkription läuft normal weiter."
     }
 
     private func switchToModel(_ model: WhisperModel) {

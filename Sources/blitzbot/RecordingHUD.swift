@@ -83,7 +83,7 @@ final class RecordingHUDController {
         .environmentObject(privacyEngine)
 
         let host = NSHostingView(rootView: view)
-        let size = NSSize(width: 560, height: 300)
+        let size = NSSize(width: 560, height: 380)
         host.frame = NSRect(origin: .zero, size: size)
 
         let panel = NSPanel(
@@ -229,6 +229,9 @@ private struct HUDView: View {
                 active: isRecording && !processor.isPaused
             )
             .frame(height: 72)
+
+            // ── Live partial transcript (Apple SpeechTranscriber, macOS 26+) ─
+            livePartialView
 
             // ── Silence banner — reserved height, fades in/out (no layout jump) ──
             autoStopBannerReserved
@@ -429,6 +432,58 @@ private struct HUDView: View {
     private var timerString: String {
         let t = Int(processor.elapsed)
         return String(format: "%02d:%02d", t / 60, t % 60)
+    }
+
+    /// Live partial transcript view. Renders Apple's SpeechTranscriber output
+    /// during recording — confirmed segments in normal weight, the volatile
+    /// in-flight tail dimmed and italicized so the user can see which words
+    /// may still rewrite. Built as a single `AttributedString` so wrapped
+    /// lines flow naturally instead of the volatile chunk jumping to the
+    /// right edge of the first line.
+    @ViewBuilder
+    private var livePartialView: some View {
+        let partial = processor.livePartial
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                Text(buildLivePartialAttributed(partial))
+                    .font(.system(size: 12, weight: .regular, design: .default))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.disabled)
+                    .padding(.bottom, 1)
+                Color.clear.frame(height: 0).id("liveEnd")
+            }
+            .onChange(of: partial.combined) { _ in
+                proxy.scrollTo("liveEnd")
+            }
+        }
+        .frame(height: 80)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+        )
+        .opacity(isRecording ? 1 : 0)
+        .animation(.easeInOut(duration: 0.2), value: isRecording)
+    }
+
+    /// Builds one `AttributedString` from confirmed + volatile parts. Same
+    /// font for both so wrapping is consistent; only color/italic differ.
+    private func buildLivePartialAttributed(_ partial: LivePartial) -> AttributedString {
+        var result = AttributedString(partial.confirmed)
+        result.foregroundColor = .white.opacity(0.92)
+        if !partial.volatile.isEmpty {
+            let prefix = partial.confirmed.isEmpty ? "" : " "
+            var vol = AttributedString(prefix + partial.volatile)
+            vol.foregroundColor = .white.opacity(0.5)
+            vol.font = .system(size: 12).italic()
+            result.append(vol)
+        }
+        return result
     }
 
     /// Status line. During processing phases, embeds a spinner + live elapsed
