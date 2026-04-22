@@ -123,6 +123,13 @@ final class AppConfig: ObservableObject {
         didSet { defaults.set(serviceClipboardFallback, forKey: "serviceClipboardFallback") }
     }
 
+    /// When true, mode hotkeys behave as push-to-talk: hold to record, release to
+    /// stop. When false (default), they toggle (press once to start, press again
+    /// to stop) — the original v1.0 behavior.
+    @Published var holdToTalk: Bool {
+        didSet { defaults.set(holdToTalk, forKey: "holdToTalk") }
+    }
+
     private let defaults = UserDefaults.standard
     private static let promptMigrationKey = "promptMigration.v1_0_4.customOnly"
 
@@ -213,6 +220,7 @@ final class AppConfig: ObservableObject {
         // Privacy mode — default registered as `true` at the top of init (v1.2.2+).
         // Existing installs that had it explicitly turned off keep their setting.
         self.privacyMode = defaults.bool(forKey: "privacyMode")
+        self.holdToTalk = defaults.bool(forKey: "holdToTalk")
         // Custom anonymization terms (persistent, separate from the session mapping).
         // Read once into a local to avoid "self used before all stored properties
         // initialized" — then push into the engine at the very end of init.

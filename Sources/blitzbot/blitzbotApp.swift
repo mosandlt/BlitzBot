@@ -55,6 +55,9 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        hotkeys.isHoldToTalkEnabled = { [weak self] in
+            self?.config.holdToTalk ?? false
+        }
         hotkeys.onToggleOffice = { [weak self] in
             guard let self else { return }
             DispatchQueue.main.async {

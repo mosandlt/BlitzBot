@@ -437,6 +437,15 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section("Aufnahme-Trigger") {
+                Toggle("Hold-to-Talk (Hotkey gedrückt halten)", isOn: $config.holdToTalk)
+                    .onChange(of: config.holdToTalk) { _ in config.save() }
+                Text(config.holdToTalk
+                     ? "Halte den Hotkey gedrückt während du sprichst — beim Loslassen wird transkribiert."
+                     : "Drück den Hotkey einmal zum Starten, nochmal zum Stoppen (Toggle).")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Section {
                 Text("Während einer Aufnahme kannst du den Modus wechseln, indem du einen anderen Hotkey drückst — die Aufnahme läuft weiter, der Text wird dann im neuen Modus verarbeitet.")
                     .font(.caption).foregroundStyle(.secondary)

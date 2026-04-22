@@ -56,12 +56,20 @@ final class HotkeyManager {
     var onRewriteSelection: (() -> Void)?
     var onToggleOffice: (() -> Void)?
 
+    /// Returns true if the user has enabled hold-to-talk in Settings.
+    /// Read on every key event so toggling the setting takes effect immediately.
+    var isHoldToTalkEnabled: () -> Bool = { false }
+
     private static let migrationKey = "hotkeyMigration.v1_0_1.businessModeAdded"
     private static let officeDefaultResetKey = "hotkeyMigration.v1_2_1.officeDefaultRemoved"
 
     // Kept alive so the tap is not released.
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+
+    // Tracks the mode whose hotkey is currently being held. Used to suppress
+    // auto-repeat keyDowns and to match the eventual keyUp.
+    private var activeHoldMode: Mode?
 
     // Static back-reference used by the C callback to reach the Swift instance.
     private static weak var current: HotkeyManager?
@@ -76,15 +84,21 @@ final class HotkeyManager {
     private func installEventTap() {
         HotkeyManager.current = self
 
-        let eventMask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+        let eventMask = CGEventMask(
+            (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        )
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .listenOnly,
             eventsOfInterest: eventMask,
-            callback: { _, _, event, _ -> Unmanaged<CGEvent>? in
-                HotkeyManager.current?.handleKeyDown(event)
+            callback: { _, type, event, _ -> Unmanaged<CGEvent>? in
+                if type == .keyDown {
+                    HotkeyManager.current?.handleKeyDown(event)
+                } else if type == .keyUp {
+                    HotkeyManager.current?.handleKeyUp(event)
+                }
                 return nil  // listenOnly — return value is ignored by the system
             },
             userInfo: nil
@@ -104,6 +118,7 @@ final class HotkeyManager {
 
     private func handleKeyDown(_ event: CGEvent) {
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         let relevantFlags: CGEventFlags = [.maskCommand, .maskAlternate, .maskShift, .maskControl]
         let eventMods = event.flags.intersection(relevantFlags)
 
@@ -115,6 +130,13 @@ final class HotkeyManager {
                   Int64(key.rawValue) == keyCode,
                   cgFlags(from: shortcut.modifiers) == eventMods
             else { continue }
+
+            // Hold-to-talk: ignore OS auto-repeat keyDowns; only the *first* press
+            // arms the recording. Stop happens on keyUp.
+            if isHoldToTalkEnabled() {
+                if isAutorepeat || activeHoldMode != nil { return }
+                activeHoldMode = mode
+            }
 
             DispatchQueue.main.async { [weak self] in
                 self?.onTrigger?(mode)
@@ -139,6 +161,22 @@ final class HotkeyManager {
             DispatchQueue.main.async { [weak self] in
                 self?.onToggleOffice?()
             }
+        }
+    }
+
+    private func handleKeyUp(_ event: CGEvent) {
+        // Only relevant in hold-to-talk mode and only when something is actively held.
+        guard isHoldToTalkEnabled(), let active = activeHoldMode else { return }
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard let shortcut = KeyboardShortcuts.getShortcut(for: active.shortcutName),
+              let key = shortcut.key,
+              Int64(key.rawValue) == keyCode else { return }
+
+        activeHoldMode = nil
+        // Same callback as keyDown — ModeProcessor.toggle stops when called with
+        // the currently-active mode.
+        DispatchQueue.main.async { [weak self] in
+            self?.onTrigger?(active)
         }
     }
 
