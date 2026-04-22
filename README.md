@@ -808,7 +808,7 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
-### Unreleased
+### v1.4.0 (2026-04-22)
 
 - **Translate mode (#7)** — `⌘⌥7`. Auto-flip translator: dictate in German → get English back, dictate in English → get German back. Whisper detects the source language; Claude translates into the other one preserving register and tone. Names, brands, code identifiers stay untouched. Single prompt handles both directions, no extra setting.
 - **Hold-to-Talk** — Settings → Hotkeys gets a global toggle. When on, mode hotkeys behave as push-to-talk: keyDown starts recording, keyUp stops. Auto-repeat keyDowns are suppressed. Default stays toggle (the v1.0 behavior).
