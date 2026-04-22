@@ -396,6 +396,28 @@ Seven tabs under **⚙ Settings**:
 | **Setup**       | Opens the onboarding wizard again. Use when permissions got reset (common after rebuilds). |
 | **About**       | Version, update check, GitHub link, license. |
 
+### Whisper models — which one to pick
+
+The picker in **Settings → Whisper → Modell** offers six multilingual variants from `ggerganov/whisper.cpp` on HuggingFace. All run **fully local** and **fully offline** — no audio ever leaves your machine. The differences are speed, disk footprint, and accuracy at the edges (heavy accents, fast speech, low-volume passages, technical jargon).
+
+| Model                     | Size    | Speed¹       | Accuracy DE/EN²            | Picks itself for |
+|---------------------------|---------|--------------|----------------------------|------------------|
+| `base`                    | 148 MB  | very fast    | drops words on accent / fast speech, weak on German jargon | very small disk, English-only / very simple dictations |
+| `small`                   | 488 MB  | fast         | acceptable on clear speech, German still wobbly | older MacBook on battery, short clips, low-stakes use |
+| `medium`                  | 1.5 GB  | medium       | solid DE/EN, near-large on most clips | balanced fallback when Turbo isn't available |
+| `large-v3-turbo`          | 1.6 GB  | fast         | excellent DE/EN, very few misreads | **default — best speed/quality tradeoff for desktop dictation** |
+| `large-v3-turbo-Q5_0`     | ~600 MB | fast         | minimal quality drop vs Turbo, ⅓ disk footprint | tight on disk, want near-Turbo quality |
+| `large-v3`                | 3.1 GB  | slow (~2× turbo) | highest accuracy at the edges (accent, jargon, low audio) | heavy accent, technical vocabulary, transcription fidelity > speed |
+
+¹ Wall-clock relative to a 10-second clip on M-series Apple Silicon. `large-v3-turbo` typically transcribes a 10-s clip in ~1-2 s; `large-v3` takes 3-5 s on the same hardware.
+² Subjective. None of these are "wrong" — they trade off how often they nail an unusual word vs. how fast you get the result.
+
+**Switching**: pick a different entry from the dropdown. If the chosen file isn't already in `~/.blitzbot/models/`, blitzbot opens the download sheet automatically. **After a successful switch, all other `ggml-*.bin` files in that folder are deleted** so disk doesn't grow with every experiment. Manual paths (`Benutzerdefiniert`) are exempt from auto-cleanup.
+
+**Quantization note**: the `Q5_0` variant uses 5-bit weight quantization. The model is mathematically smaller and a touch lossier, but on a desktop dictation workload (clean mic, ~10-30 second clips, common vocabulary) the output is rarely distinguishable from `large-v3-turbo` proper. It's the right pick when 1 GB of disk matters more than the last few percent of edge-case accuracy.
+
+**Don't pick `base` or `small` for German.** Whisper's smaller multilingual variants are noticeably weaker on German than English, and umlauts / compound words get butchered. `medium` is the realistic floor for German dictation.
+
 ---
 
 ## Data flow & privacy
