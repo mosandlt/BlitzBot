@@ -136,7 +136,7 @@ struct PermissionsView: View {
 /// Modal sheet that streams the Whisper model into place with a progress bar
 /// and a single cancel button. Dismisses itself via the `onFinish` callback
 /// once the downloader reports `.done`.
-private struct ModelDownloadSheet: View {
+struct ModelDownloadSheet: View {
     @ObservedObject var downloader: ModelDownloader
     let onFinish: () -> Void
 
@@ -148,7 +148,7 @@ private struct ModelDownloadSheet: View {
                     .foregroundStyle(.blue)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Whisper-Modell laden").font(.title3.bold())
-                    Text("ggml-large-v3-turbo · ~1.5 GB · HuggingFace").font(.caption)
+                    Text("\(downloader.model.rawValue) · ~\(downloader.model.sizeMB) MB · HuggingFace").font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

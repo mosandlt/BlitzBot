@@ -1,16 +1,89 @@
 import Foundation
 
-/// Streams the ggml-large-v3-turbo Whisper model from HuggingFace into
-/// `~/.blitzbot/models/`. Single-shot per lifetime; a cancelled or failed
-/// download wipes the partial file so the next attempt starts clean.
+/// Curated list of multilingual Whisper models hosted by ggerganov on HuggingFace.
+/// English-only variants are intentionally omitted because blitzbot supports DE/EN
+/// out of the box.
+enum WhisperModel: String, CaseIterable, Identifiable {
+    case base               = "ggml-base"
+    case small              = "ggml-small"
+    case medium             = "ggml-medium"
+    case largeV3TurboQ5     = "ggml-large-v3-turbo-q5_0"
+    case largeV3Turbo       = "ggml-large-v3-turbo"
+    case largeV3            = "ggml-large-v3"
+
+    var id: String { rawValue }
+
+    var filename: String { "\(rawValue).bin" }
+
+    /// Approximate on-disk size in MB. Used for the progress label and the
+    /// size-sanity check after download (we accept anything ≥ 80% of expected).
+    var sizeMB: Int {
+        switch self {
+        case .base:           return 148
+        case .small:          return 488
+        case .medium:         return 1530
+        case .largeV3TurboQ5: return 574
+        case .largeV3Turbo:   return 1620
+        case .largeV3:        return 3094
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .base:           return "Base"
+        case .small:          return "Small"
+        case .medium:         return "Medium"
+        case .largeV3TurboQ5: return "Large v3 Turbo (Q5 quantized)"
+        case .largeV3Turbo:   return "Large v3 Turbo"
+        case .largeV3:        return "Large v3"
+        }
+    }
+
+    /// One-liner shown under the picker option — speed, quality, footprint.
+    var subtitle: String {
+        switch self {
+        case .base:           return "Sehr schnell, ungenau bei Akzent oder Fachsprache"
+        case .small:          return "Schnell, brauchbar für klare Diktate"
+        case .medium:         return "Solide Mitte, etwas langsamer"
+        case .largeV3TurboQ5: return "Wie Turbo, ~⅓ der Größe, minimal schwächer"
+        case .largeV3Turbo:   return "Beste Balance — schnell und sehr genau"
+        case .largeV3:        return "Höchste Genauigkeit, deutlich langsamer"
+        }
+    }
+
+    /// One model carries the "Empfohlen" badge in the UI. Currently large-v3-turbo:
+    /// best speed/quality tradeoff for desktop dictation as of whisper.cpp v1.7.x.
+    var isRecommended: Bool { self == .largeV3Turbo }
+
+    var sourceURL: URL {
+        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(filename)")!
+    }
+
+    /// Resolves to ~/.blitzbot/models/<filename>.
+    var localPath: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home
+            .appendingPathComponent(".blitzbot/models", isDirectory: true)
+            .appendingPathComponent(filename)
+    }
+
+    /// Best-effort detection: if the configured path matches one of our known
+    /// model filenames, return that model. Otherwise nil = custom/manual path.
+    static func detect(fromPath path: String) -> WhisperModel? {
+        let basename = (path as NSString).lastPathComponent
+        return WhisperModel.allCases.first { $0.filename == basename }
+    }
+}
+
+/// Streams a Whisper model from HuggingFace into `~/.blitzbot/models/`.
+/// The active model can be changed via `setModel(_:)` between downloads.
 ///
 /// Verification after download:
-///   1. HTTP 200 + byte count ≥ 100 MB (rejects 404-HTML, 0-byte, truncation)
+///   1. HTTP 200 + byte count ≥ 80 % of expected (rejects 404-HTML, truncation)
 ///   2. Magic bytes "GGUF" at offset 0 (whisper.cpp format sanity check)
 ///
 /// We deliberately skip sha256 because ggerganov doesn't publish a stable hash
 /// per model release, and HuggingFace's ETag header is not a sha256 either.
-/// Size + magic catches every realistic download failure mode.
 @MainActor
 final class ModelDownloader: NSObject, ObservableObject {
     enum State: Equatable {
@@ -24,25 +97,57 @@ final class ModelDownloader: NSObject, ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+    @Published private(set) var model: WhisperModel
 
-    private let sourceURL = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin")!
-    private let destination: URL
     private var task: URLSessionDownloadTask?
     private var session: URLSession?
     private var progressObservation: NSKeyValueObservation?
 
-    override init() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let dir = home.appendingPathComponent(".blitzbot/models", isDirectory: true)
+    init(model: WhisperModel = .largeV3Turbo) {
+        self.model = model
+        let dir = model.localPath.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.destination = dir.appendingPathComponent("ggml-large-v3-turbo.bin")
         super.init()
     }
 
-    var destinationPath: String { destination.path }
+    var destinationPath: String { model.localPath.path }
 
     var modelExists: Bool {
-        FileManager.default.fileExists(atPath: destination.path)
+        FileManager.default.fileExists(atPath: model.localPath.path)
+    }
+
+    /// Switches the active model. Resets state so the next `check()` reflects
+    /// the new target.
+    func setModel(_ model: WhisperModel) {
+        guard model != self.model else { return }
+        cancel()
+        self.model = model
+        state = .idle
+    }
+
+    /// Removes any other `ggml-*.bin` files in `~/.blitzbot/models/` that don't
+    /// match the active model. Called after a successful switch to free disk.
+    /// Returns the number of files removed.
+    @discardableResult
+    func purgeOtherModels() -> Int {
+        let dir = model.localPath.deletingLastPathComponent()
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir,
+                                                                       includingPropertiesForKeys: nil,
+                                                                       options: []) else { return 0 }
+        var removed = 0
+        for url in files {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("ggml-"), name.hasSuffix(".bin"),
+                  name != model.filename else { continue }
+            do {
+                try FileManager.default.removeItem(at: url)
+                removed += 1
+                Log.write("ModelDownloader: purged old model \(name)")
+            } catch {
+                Log.write("ModelDownloader: purge failed for \(name): \(error)")
+            }
+        }
+        return removed
     }
 
     /// Runs a HEAD request to confirm HuggingFace is reachable and the file
@@ -53,7 +158,7 @@ final class ModelDownloader: NSObject, ObservableObject {
             return
         }
         state = .checking
-        var req = URLRequest(url: sourceURL)
+        var req = URLRequest(url: model.sourceURL)
         req.httpMethod = "HEAD"
         req.timeoutInterval = 20
         do {
@@ -69,12 +174,11 @@ final class ModelDownloader: NSObject, ObservableObject {
             }
             let bytes = http.expectedContentLength
             if bytes <= 0 {
-                // Fall through to download anyway — HEAD sometimes returns -1 (unknown).
                 state = .needsDownload(expectedBytes: 0)
             } else {
                 state = .needsDownload(expectedBytes: bytes)
             }
-            Log.write("ModelDownloader: HEAD ok bytes=\(bytes)")
+            Log.write("ModelDownloader: HEAD ok model=\(model.rawValue) bytes=\(bytes)")
         } catch {
             state = .error(message: "Server nicht erreichbar: \(error.localizedDescription)")
             Log.write("ModelDownloader: HEAD failed: \(error)")
@@ -87,7 +191,7 @@ final class ModelDownloader: NSObject, ObservableObject {
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 60 * 30  // 30 min total window
+        configuration.timeoutIntervalForResource = 60 * 60  // 60 min — large-v3 is 3 GB
         configuration.waitsForConnectivity = true
 
         let session = URLSession(configuration: configuration)
@@ -95,7 +199,7 @@ final class ModelDownloader: NSObject, ObservableObject {
 
         state = .downloading(bytesDone: 0, bytesTotal: 0)
 
-        let task = session.downloadTask(with: sourceURL) { [weak self] tempURL, response, error in
+        let task = session.downloadTask(with: model.sourceURL) { [weak self] tempURL, response, error in
             let taskError = error
             let taskResponse = response
             let capturedTemp = tempURL
@@ -104,7 +208,6 @@ final class ModelDownloader: NSObject, ObservableObject {
             }
         }
 
-        // KVO on Progress gives byte-level updates without needing a full delegate.
         progressObservation = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
             let done = progress.completedUnitCount
             let total = progress.totalUnitCount
@@ -115,7 +218,7 @@ final class ModelDownloader: NSObject, ObservableObject {
 
         task.resume()
         self.task = task
-        Log.write("ModelDownloader: download started")
+        Log.write("ModelDownloader: download started model=\(model.rawValue)")
     }
 
     func cancel() {
@@ -135,7 +238,6 @@ final class ModelDownloader: NSObject, ObservableObject {
 
         if let error = error {
             let ns = error as NSError
-            // Cancellation comes back as NSURLErrorCancelled — don't surface as a failure.
             if ns.code == NSURLErrorCancelled { return }
             state = .error(message: "Download fehlgeschlagen: \(error.localizedDescription)")
             Log.write("ModelDownloader: error: \(error)")
@@ -158,10 +260,12 @@ final class ModelDownloader: NSObject, ObservableObject {
         do {
             let attrs = try FileManager.default.attributesOfItem(atPath: tempURL.path)
             let sizeNum = (attrs[.size] as? NSNumber)?.int64Value ?? 0
-            guard sizeNum >= 100_000_000 else {
+            // Accept anything ≥ 80 % of expected to tolerate compression / mirror diffs.
+            let minExpected = Int64(Double(model.sizeMB) * 1_000_000 * 0.8)
+            guard sizeNum >= minExpected else {
                 state = .error(message: "Download scheint unvollständig (\(sizeNum) Bytes).")
                 try? FileManager.default.removeItem(at: tempURL)
-                Log.write("ModelDownloader: size too small=\(sizeNum)")
+                Log.write("ModelDownloader: size too small=\(sizeNum) min=\(minExpected)")
                 return
             }
 
@@ -176,12 +280,13 @@ final class ModelDownloader: NSObject, ObservableObject {
                 return
             }
 
+            let destination = model.localPath
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
             }
             try FileManager.default.moveItem(at: tempURL, to: destination)
             state = .done
-            Log.write("ModelDownloader: done size=\(sizeNum) path=\(destination.path)")
+            Log.write("ModelDownloader: done model=\(model.rawValue) size=\(sizeNum) path=\(destination.path)")
         } catch {
             state = .error(message: "Konnte Datei nicht speichern: \(error.localizedDescription)")
             try? FileManager.default.removeItem(at: tempURL)

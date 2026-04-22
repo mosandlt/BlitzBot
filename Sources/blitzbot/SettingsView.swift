@@ -14,6 +14,10 @@ struct SettingsView: View {
 
     @Environment(\.openWindow) private var openWindow
 
+    @StateObject private var modelDownloader = ModelDownloader()
+    @State private var showingModelDownload = false
+    @State private var pendingModel: WhisperModel?
+
     private var selectedTab: SettingsTab {
         get { SettingsTab(rawValue: selectedTabRaw) ?? .general }
     }
@@ -411,15 +415,90 @@ struct SettingsView: View {
                     TextField("/opt/homebrew/bin/whisper-cli", text: $config.whisperBinary)
                         .onSubmit { config.save() }
                 }
-                HStack {
-                    Text("Modell").frame(width: 60, alignment: .leading)
-                    TextField("~/.blitzbot/models/ggml-large-v3-turbo.bin",
-                              text: $config.whisperModel)
-                        .onSubmit { config.save() }
-                }
+                whisperModelPicker
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showingModelDownload) {
+            ModelDownloadSheet(downloader: modelDownloader,
+                               onFinish: handleModelDownloadFinish)
+        }
+    }
+
+    @ViewBuilder
+    private var whisperModelPicker: some View {
+        let detected = WhisperModel.detect(fromPath: config.whisperModel)
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Modell", selection: Binding<String>(
+                get: { detected?.rawValue ?? "__custom__" },
+                set: { newValue in
+                    if newValue == "__custom__" { return }  // selecting custom keeps the existing path
+                    if let model = WhisperModel(rawValue: newValue) {
+                        switchToModel(model)
+                    }
+                }
+            )) {
+                ForEach(WhisperModel.allCases) { model in
+                    HStack {
+                        Text(model.displayName)
+                        if model.isRecommended {
+                            Text("Empfohlen")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Color.green.opacity(0.18), in: Capsule())
+                                .foregroundStyle(.green)
+                        }
+                        Text("· \(model.sizeMB) MB")
+                            .foregroundStyle(.secondary)
+                    }
+                    .tag(model.rawValue)
+                }
+                Divider()
+                Text("Benutzerdefiniert (manueller Pfad)").tag("__custom__")
+            }
+            if let model = detected {
+                Text(model.subtitle)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                TextField("~/.blitzbot/models/<datei>.bin", text: $config.whisperModel)
+                    .onSubmit { config.save() }
+                Text("Manueller Pfad — kein automatischer Download oder Bereinigung.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func switchToModel(_ model: WhisperModel) {
+        let alreadyOnDisk = FileManager.default.fileExists(atPath: model.localPath.path)
+        if alreadyOnDisk {
+            applyModelChoice(model)
+            return
+        }
+        // Need to download first; remember the choice and open the sheet.
+        pendingModel = model
+        modelDownloader.setModel(model)
+        showingModelDownload = true
+        Task { await modelDownloader.check() }
+    }
+
+    private func applyModelChoice(_ model: WhisperModel) {
+        config.whisperModel = model.localPath.path
+        config.save()
+        modelDownloader.setModel(model)
+        let purged = modelDownloader.purgeOtherModels()
+        if purged > 0 {
+            Log.write("Settings: switched to \(model.rawValue), purged \(purged) old model(s)")
+        }
+    }
+
+    private func handleModelDownloadFinish() {
+        // Sheet was closed. If the download completed, finalize the switch.
+        if case .done = modelDownloader.state, let model = pendingModel {
+            applyModelChoice(model)
+        }
+        pendingModel = nil
+        showingModelDownload = false
     }
 
     private var hotkeys: some View {
