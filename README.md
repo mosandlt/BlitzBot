@@ -23,7 +23,7 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 ## Table of contents
 
-- [The seven modes](#the-seven-modes)
+- [The eight modes](#the-eight-modes)
 - [Office Mode — interactive selection-rewriter](#office-mode--interactive-selection-rewriter)
 - [Privacy Mode — local PII anonymization](#privacy-mode--local-pii-anonymization)
 - [Connection recovery — no transcript left behind](#connection-recovery--no-transcript-left-behind)
@@ -45,9 +45,9 @@ No always-on cloud listener. No server round-trip for the raw transcription. Pre
 
 ---
 
-## The seven modes
+## The eight modes
 
-Modes 1–6 are voice-driven (mic + Whisper + paste). Mode 7 (**Office**) is the first non-voice mode: a dedicated window that accepts typed text or a dropped file.
+Modes 1–7 are voice-driven (mic + Whisper + paste). Mode 8 (**Office**) is the first non-voice mode: a dedicated window that accepts typed text or a dropped file.
 
 | # | Mode          | Default hotkey | Tagline                                 | Behavior |
 |---|---------------|----------------|------------------------------------------|----------|
@@ -57,7 +57,8 @@ Modes 1–6 are voice-driven (mic + Whisper + paste). Mode 7 (**Office**) is the
 | 4 | **Rage**        | `⌘⌥4`          | Frustration in. Calm out.                | Claude strips insults and aggressive tone — the substance of your criticism stays sharp. Good for writing angry emails you won't regret. |
 | 5 | **Emoji**       | `⌘⌥5`          | Voice in. Text with emojis out.          | Original wording 1:1, dotted with tasteful emojis (roughly 1 per 1-2 sentences). |
 | 6 | **Prompt**      | `⌘⌥6`          | Idea in. Prompt out.                     | Dictate a loose idea — Claude turns it into a clean, precise prompt you can paste into any AI tool (ChatGPT, Claude, Claude Code, Cursor, Aider, Copilot, Gemini, …). Output is the prompt itself, not the result. |
-| 7 | **Office**      | *(no default — set in Settings → Hotkeys)* | Selection in. Choice + paste out. | Interactive selection-rewriter. Grabs the currently selected text, shows it in a preview, lets you pick any voice-mode prompt (Business, Plus, Rage, Emoji, Prompt), override profile + model, tweak the text, then pastes the result back into the source app on ⌘↵. File-drop also works as an alternative input. See [Office Mode](#office-mode--interactive-selection-rewriter). |
+| 7 | **Translate**   | `⌘⌥7`          | DE in. EN out. (Or the other way round.) | Auto-flip translator. Whisper detects the source language; Claude translates into the other one (DE→EN or EN→DE), preserving register and tone. Names and code identifiers stay unchanged. |
+| 8 | **Office**      | *(no default — set in Settings → Hotkeys)* | Selection in. Choice + paste out. | Interactive selection-rewriter. Grabs the currently selected text, shows it in a preview, lets you pick any voice-mode prompt (Business, Plus, Rage, Emoji, Prompt, Translate), override profile + model, tweak the text, then pastes the result back into the source app on ⌘↵. File-drop also works as an alternative input. See [Office Mode](#office-mode--interactive-selection-rewriter). |
 
 ### Output language (auto-detected or manual)
 
@@ -387,9 +388,9 @@ Seven tabs under **⚙ Settings**:
 
 | Tab         | What's inside |
 |-------------|---------------|
-| **General**     | Launch-at-Login toggle (SMAppService — blitzbot starts with your Mac), output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, Whisper model path. Active profile name shown with a quick link to the Profile tab. |
+| **General**     | Launch-at-Login toggle (SMAppService — blitzbot starts with your Mac), microphone picker (Core Audio device list, falls back to system default if the chosen mic is gone), output language (Auto/DE/EN), auto-stop on silence (toggle + timeout 10s–2min, default 60s), Whisper binary path, **Whisper-Modell-Picker** (curated list: base / small / medium / large-v3-turbo / large-v3-turbo-Q5 / large-v3 — auto-download on switch, old models purged to save disk; "Benutzerdefiniert" preserves manual paths). Active profile name shown with a quick link to the Profile tab. |
 | **Profile**     | Connection profiles — add, edit, delete, import/export, scan for local configs. Quick-switcher chips. Model list per profile. See [Connection profiles](#connection-profiles). |
-| **Hotkeys**     | One recorder field per mode. Click, press keys. Defaults shown. |
+| **Hotkeys**     | One recorder field per mode. Click, press keys. Defaults shown. **Hold-to-Talk toggle** (push-to-talk: hold the hotkey to record, release to stop) — alternative to the default toggle behavior. |
 | **Prompts**     | Editable system prompt per mode. Leave empty = language-aware default. Add text to either *replace* or *append* to the default (toggle per mode). |
 | **Vocabulary**  | Proper nouns, product names, jargon, colleagues. Passed to Whisper as `--prompt`. Improves spelling accuracy dramatically. |
 | **Setup**       | Opens the onboarding wizard again. Use when permissions got reset (common after rebuilds). |
@@ -776,16 +777,25 @@ If you want to take this on: fork or open an issue, propose the spike, and we'll
 
 - [ ] Apple notarization (removes first-launch Gatekeeper workaround for end users)
 - [ ] Universal binary (arm64 + x86_64)
-- [ ] Push-to-talk mode
-- [ ] Streaming transcription with interim text in the HUD
-- [ ] Multi-mic selection in settings
-- [ ] Custom "Translate" mode
+- [ ] Streaming transcription with interim text in the HUD (parked — recording-length data doesn't justify the WhisperKit refactor yet)
+- [ ] Shortcuts.app integration (AppIntents — "Dictate now in mode X")
 
 Got other ideas? Open an issue.
 
 ---
 
 ## Changelog
+
+### Unreleased
+
+- **Translate mode (#7)** — `⌘⌥7`. Auto-flip translator: dictate in German → get English back, dictate in English → get German back. Whisper detects the source language; Claude translates into the other one preserving register and tone. Names, brands, code identifiers stay untouched. Single prompt handles both directions, no extra setting.
+- **Hold-to-Talk** — Settings → Hotkeys gets a global toggle. When on, mode hotkeys behave as push-to-talk: keyDown starts recording, keyUp stops. Auto-repeat keyDowns are suppressed. Default stays toggle (the v1.0 behavior).
+- **Whisper-Modell-Picker** — Settings → Whisper → Modell shows a curated list: `base`, `small`, `medium`, `large-v3-turbo` (Empfohlen), `large-v3-turbo-Q5`, `large-v3`. Switching auto-downloads the chosen variant on demand and **purges other `ggml-*.bin` files in `~/.blitzbot/models/`** to keep disk in check. "Benutzerdefiniert" preserves the manual-path escape hatch.
+- **Multi-Mic-Selector** — Settings → Mikrofon. Core Audio device enumerator with a picker; stored as the device UID so reconnects survive USB re-enumeration. If the chosen mic is gone at recording start, AudioRecorder logs and falls back to system default — recording never fails because of a missing mic.
+- **HUD progress feedback** — the 2-25 s wait between REC stop and PASTE used to show a static "Transkribiere…" / "Formuliere…" line. Now shows a spinner, a live tenths-of-a-second counter, and the active provider name during the LLM step ("Formuliere via Anthropic … 4.2s"). No more "is it stuck?" feeling on long Opus calls.
+- **Whisper decoding stability** — `WhisperTranscriber` now passes `--temperature 0`, `--no-fallback`, `--suppress-nst`, and explicit beam/best-of pinning. Kills whisper.cpp's temperature-fallback that paraphrased low-confidence segments into plausible-but-wrong sentences. Tradeoff: noisy clips lose the safety net and may produce a few garbled words instead of a smooth rewrite. For dictation where the user reviews output, literal beats fluent.
+- **Recovery: WAV header repair** — `AVAudioFile` only writes the RIFF + data chunk sizes on close, so a recording killed mid-stream leaves a file with audio bytes but a 0-byte data chunk. Whisper then read 0 frames and Recovery logged "transcript empty". The orphan-recovery path now patches the chunk-size fields from the actual file size before transcribing, so killed recordings come back intact.
+- **Startup-timing log marker** — added `applicationWillFinishLaunching` to the log so a future slow-startup incident (a 33-s gap was observed once) can be bisected.
 
 ### v1.3.5 (2026-04-21)
 
