@@ -1,7 +1,7 @@
 import Foundation
 
 enum Mode: String, CaseIterable, Identifiable, Codable {
-    case normal, business, plus, rage, emoji, aiCommand, officeMode
+    case normal, business, plus, rage, emoji, aiCommand, translate, officeMode
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .rage:       return String(localized: "mode.rage.name", defaultValue: "Rage")
         case .emoji:      return String(localized: "mode.emoji.name", defaultValue: "Emoji")
         case .aiCommand:  return String(localized: "mode.aiCommand.name", defaultValue: "Prompt")
+        case .translate:  return String(localized: "mode.translate.name", defaultValue: "Translate")
         case .officeMode: return String(localized: "mode.officeMode.name", defaultValue: "Office")
         }
     }
@@ -33,6 +34,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .rage:       return String(localized: "mode.rage.tagline", defaultValue: "Frust rein. Entspannt raus.")
         case .emoji:      return String(localized: "mode.emoji.tagline", defaultValue: "Sprache rein. Text mit Emojis raus.")
         case .aiCommand:  return String(localized: "mode.aiCommand.tagline", defaultValue: "Idee rein. Prompt raus.")
+        case .translate:  return String(localized: "mode.translate.tagline", defaultValue: "DE rein. EN raus. (Oder umgekehrt.)")
         case .officeMode: return String(localized: "mode.officeMode.tagline", defaultValue: "Datei rein. Zusammenfassung raus.")
         }
     }
@@ -46,6 +48,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .plus:       return "low"     // light cleanup, not complex
         case .rage:       return "medium"  // tone-shift with nuance
         case .business:   return "medium"  // style judgment — Opus 4.7 respects medium strictly
+        case .translate:  return "low"     // direct translation, no reasoning chain
         case .officeMode: return "high"    // document analysis
         case .aiCommand:  return "xhigh"   // multi-step intent inference + constraint set needs full budget
         }
@@ -59,6 +62,7 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
         case .rage:       return "flame.fill"
         case .emoji:      return "face.smiling"
         case .aiCommand:  return "wand.and.stars"
+        case .translate:  return "globe"
         case .officeMode: return "doc.text.magnifyingglass"
         }
     }
@@ -184,6 +188,20 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
 
             Antworte ausschließlich mit dem finalen Prompt-Text.
             """
+        case .translate:
+            return """
+            Du bekommst einen diktierten Text in Deutsch oder Englisch. Erkenne die Sprache und übersetze \
+            in die jeweils andere: Deutsch → Englisch, Englisch → Deutsch.
+
+            Regeln:
+            - Sprache und Tonfall des Originals erhalten (locker bleibt locker, formal bleibt formal).
+            - Idiome sinngemäß übersetzen, nicht wörtlich. Eigennamen, Marken, Code-Identifier unverändert.
+            - Füllwörter, die im Diktat zu hören sind („ähm", „also", „you know") entfernen.
+            - Keine Anrede oder Schluss erfinden, falls der User keine diktiert hat.
+            - Keine Erklärung, keine Sprachangabe, keine Markdown-Formatierung.
+
+            Antworte ausschließlich mit der Übersetzung.
+            """
         }
     }
 
@@ -290,6 +308,20 @@ enum Mode: String, CaseIterable, Identifiable, Codable {
               (e.g. ordered steps).
 
             Reply with the final prompt text only.
+            """
+        case .translate:
+            return """
+            You receive a dictated text in either German or English. Detect the language and translate \
+            into the other one: German → English, English → German.
+
+            Rules:
+            - Preserve register and tone of the original (casual stays casual, formal stays formal).
+            - Translate idioms by meaning, not literally. Keep proper names, brands, code identifiers unchanged.
+            - Strip dictation filler ("um", "uh", "ähm", "also").
+            - Don't invent a greeting or sign-off if the user didn't dictate one.
+            - No explanation, no language tag, no markdown formatting.
+
+            Reply with the translation only.
             """
         }
     }

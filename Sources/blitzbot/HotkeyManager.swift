@@ -8,6 +8,7 @@ extension KeyboardShortcuts.Name {
     static let modeRage         = Self("modeRage",         default: .init(.four,  modifiers: [.command, .option]))
     static let modeEmoji        = Self("modeEmoji",        default: .init(.five,  modifiers: [.command, .option]))
     static let modeAICommand    = Self("modeAICommand",    default: .init(.six,   modifiers: [.command, .option]))
+    static let modeTranslate    = Self("modeTranslate",    default: .init(.seven, modifiers: [.command, .option]))
     static let rewriteSelection = Self("rewriteSelection", default: .init(.zero,  modifiers: [.command, .option]))
     /// Office mode — no default. Earlier v1.2.0 builds defaulted to ⌘⌥O, but that
     /// collides with other apps (Outlook, etc). Set your own combo in Settings → Hotkeys.
@@ -23,6 +24,7 @@ extension Mode {
         case .rage:       return .modeRage
         case .emoji:      return .modeEmoji
         case .aiCommand:  return .modeAICommand
+        case .translate:  return .modeTranslate
         case .officeMode: return .toggleOffice
         }
     }
@@ -40,6 +42,7 @@ extension Mode {
         case .rage:       return "⌘⌥4"
         case .emoji:     return "⌘⌥5"
         case .aiCommand:  return "⌘⌥6"
+        case .translate:  return "⌘⌥7"
         case .officeMode: return "—"
         }
     }
