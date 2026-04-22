@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import Foundation
 
 final class AudioRecorder: ObservableObject {
@@ -15,7 +16,7 @@ final class AudioRecorder: ObservableObject {
     private var ringBuffer: [Float] = Array(repeating: 0, count: 300)
     private var ringWriteIdx: Int = 0
 
-    func start() throws -> URL {
+    func start(preferredMicUID: String? = nil) throws -> URL {
         // Guard: if a tap is still installed from a previous (possibly aborted) recording,
         // remove it before installing a new one. installTap on an already-tapped bus throws
         // an NSException that Swift cannot catch, causing an immediate crash.
@@ -26,6 +27,10 @@ final class AudioRecorder: ObservableObject {
             file = nil
             currentURL = nil
         }
+
+        // Apply mic preference. Must run BEFORE the first inputFormat read so the
+        // sample rate / channel layout matches the device we'll actually capture from.
+        applyPreferredMic(preferredMicUID, input: input)
 
         let tempDir = FileManager.default.temporaryDirectory
         let url = tempDir.appendingPathComponent("blitzbot-\(UUID().uuidString).wav")
@@ -95,6 +100,30 @@ final class AudioRecorder: ObservableObject {
 
     func resume() throws {
         try engine.start()
+    }
+
+    /// Sets the input device on the underlying HAL audio unit. nil = leave alone
+    /// (system default). If the stored UID no longer maps to a connected device,
+    /// log and fall through silently — recording continues on the system default.
+    private func applyPreferredMic(_ uid: String?, input: AVAudioInputNode) {
+        guard let uid, !uid.isEmpty else { return }
+        guard var deviceID = AudioInputDevices.deviceID(forUID: uid) else {
+            Log.write("AudioRecorder: preferred mic UID not found, falling back to default: \(uid)")
+            return
+        }
+        guard let unit = input.audioUnit else { return }
+        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioUnitSetProperty(unit,
+                                          kAudioOutputUnitProperty_CurrentDevice,
+                                          kAudioUnitScope_Global,
+                                          0,
+                                          &deviceID,
+                                          size)
+        if status != noErr {
+            Log.write("AudioRecorder: AudioUnitSetProperty failed status=\(status) for uid=\(uid)")
+        } else {
+            Log.write("AudioRecorder: input device set to uid=\(uid) id=\(deviceID)")
+        }
     }
 
     private func publishLevel(from buffer: AVAudioPCMBuffer) {

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @StateObject private var modelDownloader = ModelDownloader()
     @State private var showingModelDownload = false
     @State private var pendingModel: WhisperModel?
+    @State private var availableMics: [AudioInputDevice] = []
 
     private var selectedTab: SettingsTab {
         get { SettingsTab(rawValue: selectedTabRaw) ?? .general }
@@ -409,6 +410,9 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            Section("Mikrofon") {
+                micPicker
+            }
             Section("Whisper") {
                 HStack {
                     Text("Binary").frame(width: 60, alignment: .leading)
@@ -419,9 +423,39 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { availableMics = AudioInputDevices.list() }
         .sheet(isPresented: $showingModelDownload) {
             ModelDownloadSheet(downloader: modelDownloader,
                                onFinish: handleModelDownloadFinish)
+        }
+    }
+
+    @ViewBuilder
+    private var micPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Eingabe", selection: Binding<String>(
+                get: { config.preferredMicUID ?? "__default__" },
+                set: { newValue in
+                    config.preferredMicUID = (newValue == "__default__") ? nil : newValue
+                }
+            )) {
+                Text("System-Standard").tag("__default__")
+                ForEach(availableMics) { mic in
+                    Text(mic.name).tag(mic.uid)
+                }
+            }
+            HStack(spacing: 8) {
+                if let uid = config.preferredMicUID,
+                   !availableMics.contains(where: { $0.uid == uid }) {
+                    Label("Aktuelles Mikrofon nicht verbunden — System-Standard wird genutzt.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                Spacer()
+                Button("Liste aktualisieren") { availableMics = AudioInputDevices.list() }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
         }
     }
 

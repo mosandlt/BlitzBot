@@ -130,6 +130,19 @@ final class AppConfig: ObservableObject {
         didSet { defaults.set(holdToTalk, forKey: "holdToTalk") }
     }
 
+    /// Preferred microphone (Core Audio device UID). nil = follow system default.
+    /// Resolved to a live AudioDeviceID at recording start; if the device is gone,
+    /// AudioRecorder falls back to system default silently.
+    @Published var preferredMicUID: String? {
+        didSet {
+            if let uid = preferredMicUID {
+                defaults.set(uid, forKey: "preferredMicUID")
+            } else {
+                defaults.removeObject(forKey: "preferredMicUID")
+            }
+        }
+    }
+
     private let defaults = UserDefaults.standard
     private static let promptMigrationKey = "promptMigration.v1_0_4.customOnly"
 
@@ -221,6 +234,7 @@ final class AppConfig: ObservableObject {
         // Existing installs that had it explicitly turned off keep their setting.
         self.privacyMode = defaults.bool(forKey: "privacyMode")
         self.holdToTalk = defaults.bool(forKey: "holdToTalk")
+        self.preferredMicUID = defaults.string(forKey: "preferredMicUID")
         // Custom anonymization terms (persistent, separate from the session mapping).
         // Read once into a local to avoid "self used before all stored properties
         // initialized" — then push into the engine at the very end of init.

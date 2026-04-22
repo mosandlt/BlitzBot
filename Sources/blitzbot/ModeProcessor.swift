@@ -159,7 +159,7 @@ final class ModeProcessor: ObservableObject {
             recoveryContext = nil
         }
         do {
-            let url = try recorder.start()
+            let url = try recorder.start(preferredMicUID: config.preferredMicUID)
             activeMode = mode
             detectedLanguage = nil
             autoExecute = false
