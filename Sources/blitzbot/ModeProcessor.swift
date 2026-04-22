@@ -483,6 +483,75 @@ final class ModeProcessor: ObservableObject {
 
     // MARK: - Orphaned recording recovery
 
+    /// Patches RIFF + data chunk sizes in a WAV whose header was never finalized
+    /// because the writer process was killed mid-recording. AVAudioFile only writes
+    /// the chunk-size fields on close, so an orphaned file has audio bytes but a
+    /// 0-byte data chunk — Whisper then reads 0 frames and returns empty.
+    /// Returns true iff the header was modified.
+    private static func repairWAVHeader(at url: URL) -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let sizeInt = attrs[.size] as? Int,
+              let totalSize = UInt32(exactly: sizeInt),
+              totalSize > 44 else { return false }
+
+        guard let handle = try? FileHandle(forUpdating: url) else { return false }
+        defer { try? handle.close() }
+
+        do {
+            try handle.seek(toOffset: 0)
+            guard let head = try handle.read(upToCount: 12), head.count == 12,
+                  head.prefix(4) == Data("RIFF".utf8),
+                  head.subdata(in: 8..<12) == Data("WAVE".utf8) else { return false }
+        } catch { return false }
+
+        // Walk chunks until we find "data".
+        var pos: UInt32 = 12
+        var dataSizeFieldOffset: UInt32? = nil
+        while pos &+ 8 <= totalSize {
+            do {
+                try handle.seek(toOffset: UInt64(pos))
+                guard let header = try handle.read(upToCount: 8), header.count == 8 else { return false }
+                let id = header.prefix(4)
+                let storedSize = header.subdata(in: 4..<8).withUnsafeBytes { $0.load(as: UInt32.self) }
+                if id == Data("data".utf8) {
+                    dataSizeFieldOffset = pos &+ 4
+                    break
+                }
+                if storedSize == 0 { return false }   // corrupt non-data chunk; bail
+                let padded = storedSize &+ (storedSize & 1)
+                pos = pos &+ padded &+ 8
+            } catch { return false }
+        }
+        guard let dataSizeOff = dataSizeFieldOffset else { return false }
+
+        let expectedRiff = totalSize - 8
+        let expectedData = totalSize - dataSizeOff - 4
+
+        // Read current header values to skip the write if already correct.
+        let currentRiff: UInt32
+        let currentData: UInt32
+        do {
+            try handle.seek(toOffset: 4)
+            currentRiff = (try handle.read(upToCount: 4))?.withUnsafeBytes { $0.load(as: UInt32.self) } ?? 0
+            try handle.seek(toOffset: UInt64(dataSizeOff))
+            currentData = (try handle.read(upToCount: 4))?.withUnsafeBytes { $0.load(as: UInt32.self) } ?? 0
+        } catch { return false }
+
+        if currentRiff == expectedRiff && currentData == expectedData { return false }
+
+        var riffLE = expectedRiff.littleEndian
+        var dataLE = expectedData.littleEndian
+        do {
+            try handle.seek(toOffset: 4)
+            try handle.write(contentsOf: Data(bytes: &riffLE, count: 4))
+            try handle.seek(toOffset: UInt64(dataSizeOff))
+            try handle.write(contentsOf: Data(bytes: &dataLE, count: 4))
+            try handle.synchronize()
+        } catch { return false }
+
+        return true
+    }
+
     /// Called at launch to recover any WAV files left behind by a previous run that
     /// was killed or crashed during an active recording. Transcribes the most recent
     /// orphaned file (if any), copies the result to the clipboard, and sets a visible
@@ -508,6 +577,9 @@ final class ModeProcessor: ObservableObject {
             return
         }
         Log.write("Recovery: found orphaned recording \(best.lastPathComponent) (\(size) bytes) — transcribing")
+        if Self.repairWAVHeader(at: best) {
+            Log.write("Recovery: WAV header was unfinalized — patched RIFF + data sizes")
+        }
         Task {
             let transcriber = WhisperTranscriber(binaryPath: config.whisperBinary,
                                                  modelPath: config.whisperModel,

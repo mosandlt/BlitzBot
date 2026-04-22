@@ -27,6 +27,7 @@ final class BlitzbotAppDelegate: NSObject, NSApplicationDelegate {
     /// that case. Setting the policy programmatically at will-finish keeps the
     /// flash at launch short and allows clean `.regular ⇄ .accessory` switches.
     func applicationWillFinishLaunching(_ notification: Notification) {
+        Log.write("applicationWillFinishLaunching")
         NSApplication.shared.setActivationPolicy(.accessory)
     }
 
