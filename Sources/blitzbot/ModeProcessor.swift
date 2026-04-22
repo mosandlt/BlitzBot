@@ -46,7 +46,17 @@ final class ModeProcessor: ObservableObject {
         var secondsLeft: Int
     }
 
-    @Published var status: Status = .bereit
+    @Published var status: Status = .bereit {
+        didSet {
+            // Clear processing UI hints whenever we leave a processing phase.
+            switch status {
+            case .transkribiert, .formuliert, .recovery: break
+            default:
+                processingStartedAt = nil
+                activeProviderLabel = nil
+            }
+        }
+    }
     @Published var activeMode: Mode?
 
     /// Active recovery state. `nil` whenever we're not in a recovery flow.
@@ -74,6 +84,13 @@ final class ModeProcessor: ObservableObject {
     @Published var autoStopTimeoutForDisplay: TimeInterval = 45
     /// True when audio level is above the voice threshold — drives "Stimme erkannt" badge.
     @Published var hasVoiceActivity: Bool = false
+    /// Timestamp when the current post-recording phase (transcribing / formulating)
+    /// started. The HUD reads this and displays elapsed seconds so the user knows
+    /// the wait isn't a hang. Nil outside processing phases.
+    @Published var processingStartedAt: Date?
+    /// Provider name shown in the HUD during the LLM step (e.g. "Anthropic", "Ollama").
+    /// Set when entering `.formuliert`, cleared on terminal status.
+    @Published var activeProviderLabel: String?
 
     let recorder = AudioRecorder()
     private var isRecording = false
@@ -289,6 +306,8 @@ final class ModeProcessor: ObservableObject {
             activeMode = nil
             return
         }
+        processingStartedAt = Date()
+        activeProviderLabel = nil
         status = .transkribiert
 
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
@@ -344,6 +363,10 @@ final class ModeProcessor: ObservableObject {
                                    profileOverride: ConnectionProfile?) async {
         var output = raw
         if !prompt.isEmpty {
+            activeProviderLabel = profileOverride?.name
+                ?? config.profileStore.activeProfile?.name
+                ?? config.llmProvider.displayName
+            processingStartedAt = Date()
             status = .formuliert
             do {
                 if let override = profileOverride {

@@ -233,8 +233,7 @@ private struct HUDView: View {
             // ── Silence banner — reserved height, fades in/out (no layout jump) ──
             autoStopBannerReserved
 
-            Text(statusText)
-                .font(.caption).foregroundStyle(.white.opacity(0.75))
+            statusLine
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             modeSwitcher
@@ -432,18 +431,60 @@ private struct HUDView: View {
         return String(format: "%02d:%02d", t / 60, t % 60)
     }
 
-    private var statusText: String {
+    /// Status line. During processing phases, embeds a spinner + live elapsed
+    /// counter so the user can see the wait isn't a hang. Outside processing
+    /// phases this collapses to a plain caption.
+    @ViewBuilder
+    private var statusLine: some View {
+        switch processor.status {
+        case .transkribiert, .formuliert:
+            TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
+                processingStatusRow(now: ctx.date)
+            }
+        default:
+            Text(staticStatusText)
+                .font(.caption).foregroundStyle(.white.opacity(0.75))
+        }
+    }
+
+    private func processingStatusRow(now: Date) -> some View {
+        let started = processor.processingStartedAt ?? now
+        let elapsed = max(0, now.timeIntervalSince(started))
+        let label: String = {
+            switch processor.status {
+            case .transkribiert: return "Transkribiere"
+            case .formuliert:
+                if let provider = processor.activeProviderLabel {
+                    return "Formuliere via \(provider)"
+                }
+                return "Formuliere"
+            default: return ""
+            }
+        }()
+        return HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(.white.opacity(0.7))
+            Text("\(label) …")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.75))
+            Text(String(format: "%.1fs", elapsed))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.6))
+        }
+    }
+
+    private var staticStatusText: String {
         switch processor.status {
         case .aufnahme:
             return processor.isPaused
                 ? "Pausiert — Weiter zum Fortsetzen"
                 : "Aufnahme läuft — Hotkey erneut drücken zum Beenden"
-        case .transkribiert:  return "Transkribiere…"
-        case .formuliert:     return "Formuliere…"
         case .fertig:         return "Fertig — Text eingefügt"
         case .fehler(let m):  return "Fehler: \(m)"
         case .recovery(let m): return "Verbindungsfehler: \(m)"
         case .bereit:         return "Bereit"
+        case .transkribiert, .formuliert: return ""  // handled by statusLine
         }
     }
 
