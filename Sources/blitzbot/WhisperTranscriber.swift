@@ -21,6 +21,16 @@ struct WhisperTranscriber {
             "-l", language,
             "-nt",
             "--no-prints",
+            // Decoding stability: kill the temperature-fallback that paraphrases
+            // low-confidence segments into plausible-but-wrong sentences.
+            "--temperature", "0.0",
+            "--no-fallback",
+            // Drop "[Musik]"-style tokens from breath/pause noise.
+            "--suppress-nst",
+            // Pin beam search explicitly so future whisper.cpp default changes
+            // don't silently shift quality.
+            "-bs", "5",
+            "-bo", "5",
             "-otxt",
             "-oj",
             "-of", basePath
