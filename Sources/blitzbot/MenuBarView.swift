@@ -80,7 +80,7 @@ struct MenuBarView: View {
         switch processor.status {
         case .bereit, .fertig: return .green
         case .aufnahme:        return .red
-        case .transkribiert, .formuliert: return .yellow
+        case .transkribiert, .korrigiert, .formuliert: return .yellow
         case .fehler, .recovery: return .orange
         }
     }

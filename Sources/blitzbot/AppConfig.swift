@@ -138,6 +138,14 @@ final class AppConfig: ObservableObject {
         didSet { defaults.set(liveTranscriptionEnabled, forKey: "liveTranscriptionEnabled") }
     }
 
+    /// Run an LLM correction pass on the raw Whisper transcript before further processing.
+    /// Fixes mis-transcriptions, language mix-ups (e.g. Bavarian detected as Icelandic),
+    /// and missing punctuation. Adds one LLM call per dictation; silently skipped when
+    /// no profile is configured.
+    @Published var sttCorrectionEnabled: Bool {
+        didSet { defaults.set(sttCorrectionEnabled, forKey: "sttCorrectionEnabled") }
+    }
+
     /// Preferred microphone (Core Audio device UID). nil = follow system default.
     /// Resolved to a live AudioDeviceID at recording start; if the device is gone,
     /// AudioRecorder falls back to system default silently.
@@ -244,6 +252,7 @@ final class AppConfig: ObservableObject {
         self.privacyMode = defaults.bool(forKey: "privacyMode")
         self.holdToTalk = defaults.bool(forKey: "holdToTalk")
         self.liveTranscriptionEnabled = defaults.bool(forKey: "liveTranscriptionEnabled")
+        self.sttCorrectionEnabled = defaults.bool(forKey: "sttCorrectionEnabled")
         self.preferredMicUID = defaults.string(forKey: "preferredMicUID")
         // Custom anonymization terms (persistent, separate from the session mapping).
         // Read once into a local to avoid "self used before all stored properties

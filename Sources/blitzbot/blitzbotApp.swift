@@ -251,8 +251,8 @@ private struct MenuBarLabel: View {
 
     private var symbol: String {
         switch processor.status {
-        case .aufnahme:                   return "record.circle.fill"
-        case .transkribiert, .formuliert: return "waveform"
+        case .aufnahme:                              return "record.circle.fill"
+        case .transkribiert, .korrigiert, .formuliert: return "waveform"
         case .fertig:                     return "checkmark.circle.fill"
         case .fehler, .recovery:          return "exclamationmark.triangle.fill"
         case .bereit:                     return "bolt.fill"
@@ -261,8 +261,8 @@ private struct MenuBarLabel: View {
 
     private var tint: Color {
         switch processor.status {
-        case .aufnahme:                   return .red
-        case .transkribiert, .formuliert: return .yellow
+        case .aufnahme:                              return .red
+        case .transkribiert, .korrigiert, .formuliert: return .yellow
         case .fertig:                     return .green
         case .fehler, .recovery:          return .orange
         case .bereit:                     return .primary

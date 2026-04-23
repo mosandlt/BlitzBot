@@ -8,6 +8,8 @@ final class ModeProcessor: ObservableObject {
         case bereit
         case aufnahme
         case transkribiert
+        /// STT correction LLM pass in progress (optional, dialect-fix feature).
+        case korrigiert
         case formuliert
         case fertig
         case fehler(String)
@@ -20,6 +22,7 @@ final class ModeProcessor: ObservableObject {
             case .bereit:         return "Bereit"
             case .aufnahme:       return "Aufnahme…"
             case .transkribiert:  return "Transkribiert…"
+            case .korrigiert:     return "STT-Korrektur…"
             case .formuliert:     return "Formuliert…"
             case .fertig:         return "Fertig"
             case .fehler(let m):  return "Fehler: \(m)"
@@ -55,9 +58,10 @@ final class ModeProcessor: ObservableObject {
                 processingStartedAt = nil
                 activeProviderLabel = nil
             }
-            // Live partial belongs to the recording phase only.
+            // Live partial and live language detection belong to the recording phase only.
             if status != .aufnahme {
                 livePartial = .empty
+                liveDetectedLanguage = nil
                 Task { await liveTranscriber.stop() }
             }
         }
@@ -101,6 +105,10 @@ final class ModeProcessor: ObservableObject {
     /// hasn't produced any text yet. Cleared on stop so it doesn't bleed into
     /// the next session.
     @Published var livePartial: LivePartial = .empty
+    /// Language detected live from the Apple SpeechTranscriber partial text during recording.
+    /// Nil when live transcription is unavailable or not enough text has arrived yet.
+    /// Cleared when recording stops. Used by the HUD badge before Whisper finishes.
+    @Published var liveDetectedLanguage: String?
 
     let recorder = AudioRecorder()
     /// nonisolated so the audio-thread tap closure can call `feed` without a
@@ -327,9 +335,17 @@ final class ModeProcessor: ObservableObject {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
         Log.write("REC stop mode=\(mode) wav=\(url.path) bytes=\(size)")
 
+        // When STT correction is on and language is Auto, force de so Whisper doesn't
+        // mis-detect Bavarian (or other German dialects) as a Nordic language.
+        let whisperLang: String
+        if config.sttCorrectionEnabled && config.outputLanguage == .auto {
+            whisperLang = "de"
+        } else {
+            whisperLang = config.outputLanguage.whisperLanguageFlag
+        }
         let transcriber = WhisperTranscriber(binaryPath: config.whisperBinary,
                                              modelPath: config.whisperModel,
-                                             language: config.outputLanguage.whisperLanguageFlag,
+                                             language: whisperLang,
                                              vocabularyPrompt: config.vocabularyPrompt)
         let raw: String
         let resolvedLanguage: String
@@ -353,14 +369,46 @@ final class ModeProcessor: ObservableObject {
             return
         }
 
+        let corrected = config.sttCorrectionEnabled
+            ? await correctTranscript(raw: raw, config: config)
+            : raw
+
         let prompt = config.prompt(for: mode, language: resolvedLanguage)
-        await processTranscript(raw: raw,
+        await processTranscript(raw: corrected,
                                 mode: mode,
                                 language: resolvedLanguage,
                                 prompt: prompt,
                                 autoReturn: autoExecute,
                                 config: config,
                                 profileOverride: nil)
+    }
+
+    private func correctTranscript(raw: String, config: AppConfig) async -> String {
+        processingStartedAt = Date()
+        status = .korrigiert
+        let sttPrompt = """
+            Du bekommst automatisch transkribierten Text (Speech-to-Text), der Fehler \
+            enthalten kann: falsche Wörter, Sprachmischungen, Fehltranskriptionen, \
+            fehlende Satzzeichen — oder der komplette Text ist in der falschen Sprache \
+            (z. B. Isländisch, Dänisch), weil der Transkriptor den deutschen Dialekt \
+            falsch erkannt hat.
+
+            Der Sprecher hat Deutsch gesprochen, möglicherweise mit bayrischem Dialekt \
+            (z. B. „ned" statt „nicht", „hoid" statt „halt", „des" statt „das", \
+            „wia" statt „wie", „oamoi" statt „einmal"). Rekonstruiere den \
+            wahrscheinlich gemeinten deutschen Text. Behalte Tonalität und Inhalt bei — \
+            ändere nichts inhaltlich. Gib nur den korrigierten deutschen Text aus, \
+            ohne Erklärung.
+            """
+        do {
+            let result = try await LLMRouter.rewrite(text: raw, systemPrompt: sttPrompt, config: config)
+            let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            Log.write("STT correction: \(raw.count) → \(trimmed.count) chars")
+            return trimmed.isEmpty ? raw : trimmed
+        } catch {
+            Log.write("STT correction skipped: \(error.localizedDescription)")
+            return raw
+        }
     }
 
     /// Runs the LLM step + paste. Factored out so the recovery retry path can
@@ -530,6 +578,9 @@ final class ModeProcessor: ObservableObject {
             guard let self else { return }
             await self.liveTranscriber.start(locale: locale) { [weak self] partial in
                 self?.livePartial = partial
+                if let lang = Self.detectLanguageFromContent(partial.confirmed) {
+                    self?.liveDetectedLanguage = lang
+                }
             }
         }
         recorder.bufferTap = { [weak self] buffer, time in
@@ -711,7 +762,7 @@ final class ModeProcessor: ObservableObject {
         "bitte","gerne","eventuell","einfach"
     ]
 
-    private static func detectLanguageFromContent(_ text: String) -> String? {
+    static func detectLanguageFromContent(_ text: String) -> String? {
         let lowered = text.lowercased()
         let tokens = lowered.split { $0.isWhitespace || $0.isPunctuation }.map(String.init)
         guard tokens.count >= 3 else { return nil }

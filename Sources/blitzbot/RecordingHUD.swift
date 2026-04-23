@@ -31,7 +31,7 @@ final class RecordingHUDController {
 
     private func handle(status: ModeProcessor.Status) {
         switch status {
-        case .aufnahme, .transkribiert, .formuliert:
+        case .aufnahme, .transkribiert, .korrigiert, .formuliert:
             show()
         case .recovery:
             // Keep HUD open — user needs to pick a profile or let the timer run out.
@@ -151,6 +151,7 @@ final class RecordingHUDController {
 private struct HUDView: View {
     @EnvironmentObject var processor: ModeProcessor
     @EnvironmentObject var recorder: AudioRecorder
+    @EnvironmentObject var config: AppConfig
     @ObservedObject var profileStore: ProfileStore
     let onStop: () -> Void
     let onSwitch: (Mode) -> Void
@@ -204,14 +205,54 @@ private struct HUDView: View {
                     .foregroundStyle(.yellow)
                 Text(processor.activeMode?.displayName ?? "blitzbot")
                     .font(.headline).foregroundStyle(.white)
-                if let lang = processor.detectedLanguage {
-                    Text(lang.uppercased())
+                Spacer()
+                // Language cycle button — tap to rotate Auto → DE → EN → Auto.
+                // When Auto is active, shows the actually detected language (live or
+                // post-Whisper) so the user sees what's really happening.
+                Button {
+                    let next: OutputLanguage
+                    switch config.outputLanguage {
+                    case .auto: next = .de
+                    case .de:   next = .en
+                    case .en:   next = .auto
+                    }
+                    config.outputLanguage = next
+                    config.save()
+                } label: {
+                    let isAuto = config.outputLanguage == .auto
+                    let detected = processor.detectedLanguage
+                        ?? processor.liveDetectedLanguage
+                    let label = isAuto
+                        ? (detected.map { $0.uppercased() } ?? "AUTO")
+                        : config.outputLanguage.badge
+                    let isInferred = isAuto && detected != nil
+                    Text(label)
                         .font(.caption2.bold())
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(Color.white.opacity(0.15)))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .background(Capsule().fill(Color.white.opacity(isInferred ? 0.18 : 0.12)))
+                        .foregroundStyle(.white.opacity(isInferred ? 1.0 : 0.8))
                 }
-                Spacer()
+                .buttonStyle(.plain)
+                .help(config.outputLanguage == .auto
+                      ? "Ausgabesprache: Auto (erkannte Sprache wird angezeigt) — tippen für Deutsch"
+                      : "Ausgabesprache: \(config.outputLanguage.displayName) — tippen zum Wechseln")
+                // STT-Korrektur toggle
+                Button {
+                    config.sttCorrectionEnabled.toggle()
+                    config.save()
+                } label: {
+                    Image(systemName: "cloud.fill")
+                        .font(.caption)
+                        .foregroundStyle(
+                            config.sttCorrectionEnabled
+                                ? (processor.status == .korrigiert ? .yellow : .white.opacity(0.7))
+                                : .white.opacity(0.25)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(config.sttCorrectionEnabled
+                      ? "STT-Korrektur aktiv — tippen zum Deaktivieren"
+                      : "STT-Korrektur inaktiv — tippen zum Aktivieren")
                 PrivacyToggleButton(compact: true)
                 Text(timerString)
                     .font(.system(.title3, design: .monospaced).bold())
@@ -434,6 +475,30 @@ private struct HUDView: View {
         return String(format: "%02d:%02d", t / 60, t % 60)
     }
 
+    /// Language badge: shows live-detected language during recording (dimmed, pulsing),
+    /// confirmed Whisper language after processing (solid). Nil on both = hidden.
+    @ViewBuilder
+    private var languageBadge: some View {
+        if let lang = processor.detectedLanguage {
+            // Post-Whisper: confirmed language, full opacity
+            Text(lang.uppercased())
+                .font(.caption2.bold())
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Capsule().fill(Color.white.opacity(0.15)))
+                .foregroundStyle(.white.opacity(0.9))
+        } else if let lang = processor.liveDetectedLanguage {
+            // During recording: live detection from SpeechTranscriber, pulsing
+            Text(lang.uppercased())
+                .font(.caption2.bold())
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Capsule().fill(Color.white.opacity(0.10)))
+                .foregroundStyle(.white.opacity(0.55))
+                .overlay(
+                    Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5)
+                )
+        }
+    }
+
     /// Live partial transcript view. Renders Apple's SpeechTranscriber output
     /// during recording — confirmed segments in normal weight, the volatile
     /// in-flight tail dimmed and italicized so the user can see which words
@@ -492,7 +557,7 @@ private struct HUDView: View {
     @ViewBuilder
     private var statusLine: some View {
         switch processor.status {
-        case .transkribiert, .formuliert:
+        case .transkribiert, .korrigiert, .formuliert:
             TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
                 processingStatusRow(now: ctx.date)
             }
@@ -508,6 +573,7 @@ private struct HUDView: View {
         let label: String = {
             switch processor.status {
             case .transkribiert: return "Transkribiere"
+            case .korrigiert:    return "Korrigiere"
             case .formuliert:
                 if let provider = processor.activeProviderLabel {
                     return "Formuliere via \(provider)"
@@ -539,14 +605,14 @@ private struct HUDView: View {
         case .fehler(let m):  return "Fehler: \(m)"
         case .recovery(let m): return "Verbindungsfehler: \(m)"
         case .bereit:         return "Bereit"
-        case .transkribiert, .formuliert: return ""  // handled by statusLine
+        case .transkribiert, .korrigiert, .formuliert: return ""  // handled by statusLine
         }
     }
 
     private var dotColor: Color {
         switch processor.status {
         case .aufnahme:                   return .red
-        case .transkribiert, .formuliert: return .yellow
+        case .transkribiert, .korrigiert, .formuliert: return .yellow
         case .fertig:                     return .green
         case .fehler, .recovery:          return .orange
         case .bereit:                     return .gray

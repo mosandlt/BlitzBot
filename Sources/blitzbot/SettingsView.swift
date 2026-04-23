@@ -339,14 +339,12 @@ struct SettingsView: View {
                 Text(liveTranscriptionHelp)
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Divider().padding(.vertical, 4)
                 whisperModelPicker
                 HStack {
                     Text("Whisper-Binary").frame(width: 110, alignment: .leading)
                     TextField("/opt/homebrew/bin/whisper-cli", text: $config.whisperBinary)
                         .onSubmit { config.save() }
                 }
-                Divider().padding(.vertical, 4)
                 Picker("Ausgabesprache", selection: $config.outputLanguage) {
                     Text("Auto (von Whisper erkannt)").tag(OutputLanguage.auto)
                     Text("Deutsch").tag(OutputLanguage.de)
@@ -355,6 +353,20 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .onChange(of: config.outputLanguage) { _ in config.save() }
                 Text("Bei Auto entscheidet Whisper anhand der Aufnahme. Bei manueller Wahl wird die Transkription und LLM-Ausgabe erzwungen.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("STT-Korrektur (Dialekt-Fix)", isOn: $config.sttCorrectionEnabled)
+                    .onChange(of: config.sttCorrectionEnabled) { _ in config.save() }
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "cloud.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(.top, 1)
+                    Text("Sendet den transkribierten Text vor der eigentlichen Verarbeitung an den LLM-Provider — auch im Normal-Modus. Normal-Modus ist dann nicht mehr vollständig lokal.")
+                        .font(.caption).foregroundStyle(.orange.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Bereinigt Whisper-Fehltranskriptionen — besonders bei Dialekten (z. B. Bairisch) und Sprachmischungen. Silently skipped wenn kein Profil konfiguriert ist.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

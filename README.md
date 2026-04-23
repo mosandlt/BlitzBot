@@ -51,7 +51,7 @@ Modes 1–7 are voice-driven (mic + Whisper + paste). Mode 8 (**Office**) is the
 
 | # | Mode          | Default hotkey | Tagline                                 | Behavior |
 |---|---------------|----------------|------------------------------------------|----------|
-| 1 | **Normal**      | `⌘⌥1`          | Voice in. Text out.                      | Raw Whisper transcript. **No cloud call.** Zero cost. |
+| 1 | **Normal**      | `⌘⌥1`          | Voice in. Text out.                      | Raw Whisper transcript. **No cloud call by default.** Zero cost. *(Optional: enable STT Correction in Settings → General to run a dialect-fix LLM pass on the transcript before pasting — adds one cloud call.)* |
 | 2 | **Business**    | `⌘⌥2`          | Voice in. Business-ready out.            | Claude rewrites into clear, polite, structured business communication (emails, customer replies, LinkedIn posts). |
 | 3 | **Plus**        | `⌘⌥3`          | Speak in writing.                        | Claude removes filler words (*uhm, also, you know*) and fixes grammar — **your voice stays intact**. Not a business makeover. |
 | 4 | **Rage**        | `⌘⌥4`          | Frustration in. Calm out.                | Claude strips insults and aggressive tone — the substance of your criticism stays sharp. Good for writing angry emails you won't regret. |
@@ -334,7 +334,7 @@ Only needed for Business / Plus / Rage / Emoji / Prompt.
 
 **Custom endpoint or proxy:** use the Profile tab to set a different base URL and auth scheme. The scanner (*Auf diesem Mac suchen*) can auto-import settings from Claude Code config files.
 
-Normal mode runs entirely offline — no key, no cloud calls, nothing.
+Normal mode runs entirely offline — no key, no cloud calls, nothing. *(Optional STT Correction in Settings → General changes this — see below.)*
 
 ---
 
@@ -352,12 +352,12 @@ Normal mode runs entirely offline — no key, no cloud calls, nothing.
 During recording, a floating panel shows up in the middle of your screen:
 
 - **Top-left**: X cancel button (aborts recording without pasting) + mode icon + name
-- **Top-right**: elapsed time (`mm:ss`, monospaced)
+- **Top-right**: **language pill** (shows detected language, tap to cycle Auto → DE → EN) + **cloud icon** (tap to toggle STT Correction on/off) + Privacy shield + elapsed time (`mm:ss`, monospaced)
 - **Controls row**: Pause / Resume button (left) + Auto-Stop countdown clock with draining ring (right, only visible when auto-stop is running)
 - **Live transcript box**: scrollable text area at the top of the HUD — shows your words appearing in real time as you speak, powered by Apple's `SpeechTranscriber` (macOS 26+, 16-core ANE). Finalized words are shown in normal weight; the in-flight tail is dimmed. Auto-scrolls to the latest word. Visible as soon as recording starts. Can be disabled in Settings → General. The final pasted text always comes from whisper-cli (higher accuracy); this is visual feedback only.
 - **Middle**: full-width real audio waveform — draws actual PCM samples from the mic, scrolling in real-time. Always yellow during recording; grey when idle. A small **"Stimme erkannt"** badge fades in when voice is detected.
 - **Silence banner**: fades in after 5 seconds of continuous silence with countdown to auto-stop (disappears smoothly when you resume speaking, no layout jumps)
-- **Status line**: *Recording… → Pausiert → Transkribiere… → Formuliere… → Fertig*
+- **Status line**: *Recording… → Pausiert → Transkribiere… → Korrigiere… → Formuliere… → Fertig*
 - **Bottom row**: six mode pills (click to switch mode live), Auto-Execute toggle (↵), red **Stop** button
 
 The HUD does **not** steal focus — it's an `NSPanel` with `nonactivatingPanel`, visible on all Spaces including fullscreen apps. Your target app keeps focus, so the Cmd+V actually pastes where you expect. The mode pills, Pause button, and Stop button work via mouse click because the panel accepts events without activating.
@@ -432,6 +432,10 @@ whisper-cli (local, offline, no network)
     ↓
 text
     ↓
+optional STT correction pass (Settings → General → "STT-Korrektur"):
+    └─ LLM call to fix Whisper mis-transcriptions, dialect mix-ups, missing punctuation
+       → corrected text (or original if LLM unavailable — silent fallback)
+    ↓
 mode router (for non-Normal modes, LLM provider is configurable: Claude / OpenAI / Ollama):
     ├─ Normal   → text directly (no cloud call, regardless of provider)
     ├─ Business → LLM call with business prompt
@@ -454,7 +458,7 @@ text lands in whatever app has keyboard focus
 
 - **Audio never leaves your machine.** Not in any mode. Transcription is 100% local via whisper.cpp.
 - **`.wav` files are temporary.** Created in `/tmp/`, deleted immediately after Whisper finishes (inside a `defer` block in the transcriber).
-- **Normal mode makes zero network calls.** No telemetry, no analytics, no phone-home.
+- **Normal mode makes zero network calls by default.** No telemetry, no analytics, no phone-home. *(Exception: if you enable STT Correction in Settings → General, Normal mode also sends the transcript to your configured LLM provider for a dialect-fix pass before pasting.)*
 - **Business / Plus / Rage / Emoji / Prompt** send exactly one HTTPS request to `api.anthropic.com`, containing just the transcribed text + the mode's system prompt. That's the only thing that ever leaves your machine.
 - **The API key lives in the macOS Keychain**, not in UserDefaults, not on disk in plain text.
 - **Transcripts aren't persisted.** The dev log at `~/.blitzbot/logs/blitzbot.log` logs transcript *length* only — the content itself is not written to disk.
@@ -465,7 +469,7 @@ text lands in whatever app has keyboard focus
 
 | Mode       | Cost per dictation (rough) |
 |------------|-----------------------------|
-| Normal     | $0 — fully local |
+| Normal     | $0 — fully local *(+ ~$0.0003 if STT Correction is enabled)* |
 | Business   | ~$0.0006 — 200 input tokens × Sonnet pricing |
 | Plus       | ~$0.0006 |
 | Rage       | ~$0.0006 |
@@ -810,6 +814,13 @@ Got other ideas? Open an issue.
 ---
 
 ## Changelog
+
+### v1.5.0 (2026-04-23)
+
+- **STT Correction** — optional LLM pass after Whisper (Settings → General → Transkription → *STT-Korrektur*). Fixes mis-transcriptions, dialect mix-ups, and missing punctuation before the text reaches any mode processing. Toggle on/off directly from the HUD cloud icon.
+- **Bavarian dialect fix** — when STT Correction is on and Output Language is Auto, blitzbot now forces `-l de` to Whisper so Bavarian (and other German dialects) are no longer mis-detected as Nordic languages (Icelandic, Danish). The correction prompt knows Bavarian words like *ned*, *hoid*, *des*, *wia* and maps them back to standard German.
+- **Live language detection** — the language badge in the HUD now updates in real-time during recording. On Auto, it shows the actually detected language (DE/EN) instead of "AUTO" as soon as enough speech is recognised — both from Apple's SpeechTranscriber (macOS 26+ ANE) and from Whisper after processing.
+- **HUD quick-controls** — two new interactive elements in the HUD header: a **language pill** (tap to cycle Auto → DE → EN → Auto without opening Settings) and a **cloud icon** (tap to toggle STT Correction on/off mid-session). Both changes are saved immediately.
 
 ### v1.4.1 (2026-04-22)
 
