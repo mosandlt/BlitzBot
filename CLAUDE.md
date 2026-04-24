@@ -78,7 +78,8 @@ Bevor für ein neues Feature Code geschrieben wird, läuft immer erst der **Krit
 | 4   | Rage     | `⌘⌥4`  | "Frust rein. Entspannt raus."       | LLM → Beleidigungen raus, Kritik bleibt |
 | 5   | Emoji    | `⌘⌥5`  | "Sprache rein. Text mit Emojis raus." | Original + dezente Emojis |
 | 6   | Prompt   | `⌘⌥6`  | "Idee rein. Prompt raus."           | LLM verwandelt gesprochene Idee in tool-agnostischen Prompt (ChatGPT/Claude/Cursor/…). Output ist der Prompt, nicht das Ergebnis. |
-| 7   | Office   | *(opt-in)* | "Auswahl rein. Review + Paste raus." | Non-Voice: Selection/Clipboard/File-Drop → Preview → Modus-Picker → LLM → ⌘↵ pastet. Siehe `OfficeView.swift`. |
+| 7   | Translate | `⌘⌥7` | "Sprache rein. Übersetzung raus."   | Whisper + LLM → DE↔EN Auto-Flip (Zielsprache = Gegenpart der erkannten Sprache). |
+| 8   | Office   | *(opt-in)* | "Auswahl rein. Review + Paste raus." | Non-Voice: Selection/Clipboard/File-Drop → Preview → Modus-Picker → LLM → ⌘↵ pastet. Siehe `OfficeView.swift`. |
 
 Plus `⌘⌥0`: liest aktuelle Selection via AX/⌘C, schreibt im Default-Modus um, pastet zurück — fire-and-forget.
 
@@ -92,7 +93,7 @@ Jeder Modus hat anpassbaren System-Prompt in Settings (leer = Sprach-abhängiger
 - Menubar-Icon spiegelt Status: `bolt.fill` (bereit), `record.circle.fill` rot (aufnehmend), `waveform` gelb (verarbeitend), `checkmark.circle.fill` grün (fertig), `exclamationmark.triangle.fill` orange (Fehler)
 - Menubar-Popover minimal: Header + Modi-Liste + Footer (Quit, API-Key-Warning). Settings-Zahnrad im Popover-Header oben rechts
 - **Deutsche UI** ist Default, Englisch via `Localizable.strings`. Deutsche User-Logs (`"Aufnahme läuft"`), englische Identifier (`startRecording`)
-- HUD (Floating-Panel während Aufnahme): zentral, Modus-Badge + Timer mm:ss + Waveform + Status
+- HUD (Floating-Panel während Aufnahme): zentral, Modus-Badge + Timer mm:ss + Waveform + Live-Transkript (Apple SpeechTranscriber, macOS 26+ / 16-core ANE) + Sprach-Pill + Cloud-Toggle
 
 ### Settings-UI (Tabs)
 
@@ -111,8 +112,9 @@ Jeder Modus hat anpassbaren System-Prompt in Settings (leer = Sprach-abhängiger
 ### Stack
 
 - **Swift 5.9+, SwiftUI** (macOS 13+), **SPM** (nicht Xcode-Projekt)
-- **STT:** whisper.cpp lokal via `whisper-cli` CLI (nicht Whisper API) — offline, privat
-- **LLM (Business/Plus/Rage/Emoji/Prompt/Office):** `LLMRouter` → aktives `ConnectionProfile`. Provider: Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel. Auth: `x-api-key` / `Bearer` / keine.
+- **STT:** whisper.cpp lokal via `whisper-cli` CLI (nicht Whisper API) — offline, privat. Optionaler LLM-Korrektur-Pass (`sttCorrectionEnabled`) für Dialekte/Sprachmischungen.
+- **Live-Transkription:** Apple `SpeechAnalyzer` (macOS 26+, 16-core ANE) liefert Wort-für-Wort-Interim-Text im HUD während der Aufnahme. Toggle in Settings → Allgemein.
+- **LLM (Business/Plus/Rage/Emoji/Prompt/Translate/Office):** `LLMRouter` → aktives `ConnectionProfile`. Provider: Anthropic / OpenAI / Ollama / custom OpenAI-kompatibel. Auth: `x-api-key` / `Bearer` / keine.
 - **Privacy-Layer:** lokaler `PrivacyEngine` — `NLTagger(.nameType)` + `NSDataDetector` + Regex (IBAN/MAC/IPv6/Kreditkarte mit Luhn) ersetzt PII mit `[NAME_n]`/`[UNTERNEHMEN_n]`/…, reverse-mapped beim Response. Standardmäßig an.
 - **Hotkeys:** `KeyboardShortcuts` (`<1.15.0`)
 - **Auto-Paste:** `NSPasteboard` + `CGEvent` Cmd+V-Simulation (Accessibility)
@@ -146,6 +148,7 @@ Hotkey → ModeProcessor.toggle → AudioRecorder → wav → WhisperTranscriber
 | `ConnectionProfile.swift` + `ProfileStore.swift` + `ProfileScanner.swift` | Multi-LLM Profile-Management |
 | `PrivacyEngine.swift` | Pre-Send-Anonymizer, reversibles Placeholder-Mapping |
 | `KeychainStore.swift` + `KeychainPreWarmer.swift` | API-Keys mit Open-Access-ACL |
+| `LiveTranscriber.swift` | `LiveTranscriberManager` + `AppleLiveTranscriber` (SpeechAnalyzer, macOS 26+), Interim-Text-Stream an HUD |
 | `RecordingHUD.swift` + `MenuBarView.swift` + `OfficeView.swift` + `SettingsView.swift` + `ProfilesView.swift` + `PermissionsView.swift` | UI |
 | `Paster.swift` | Cmd+V via CGEvent (nonactivating) |
 | `Log.swift` | `~/.blitzbot/logs/blitzbot.log` append-only |
@@ -182,7 +185,7 @@ Hotkey → ModeProcessor.toggle → AudioRecorder → wav → WhisperTranscriber
 
 ## Aktueller Stand
 
-- **Aktuelle Version:** v1.3.4 (Stand: 2026-04-20)
+- **Aktuelle Version:** v1.5.0 (Stand: 2026-04-23)
 - **GitHub:** https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Bundle-ID:** `de.blitzbot.app`. Keychain-Service: `de.blitzbot.mac` (Accounts pro Profile-Slot + Legacy `anthropic-api-key` / `openai-api-key` / `ollama-api-key`)
 - **Release-Artifakt:** ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User: Rechtsklick → Öffnen beim ersten Start (nicht notarisiert).
@@ -190,6 +193,7 @@ Hotkey → ModeProcessor.toggle → AudioRecorder → wav → WhisperTranscriber
 - **LLM-Architektur:** `LLMRouter` → aktives `ConnectionProfile`. Apple Intelligence war v1.3.0/v1.3.1, in v1.3.2 entfernt (3B empirisch unbrauchbar). Für lokale größere Modelle: Ollama + Qwen/Llama/Mistral 14B+.
 - **Privacy:** default an seit v1.2.2. Lokale Anonymisierung vor jedem LLM-Call, Reverse-Mapping im Response.
 - **Prompt Caching:** aktiv bei Anthropic-direkten Calls (`cache_control: ephemeral` am System-Prompt, 5-Min-TTL). Bei Proxy-/Custom-baseURL-Profilen deaktiviert.
+- **macOS 26:** SPM-Resource-Bundles brauchen `CFBundleIdentifier` — `build-app.sh` patcht automatisch alle Bundles nach dem Kopieren. Ohne diesen Patch crasht `KeyboardShortcuts.RecorderCocoa` beim Start.
 - **iOS Sub-Projekt:** `blitzbot-ios/` Scaffold, nicht released. SFSpeechRecognizer funktioniert nur auf echtem iPhone, nicht im Simulator.
 
 Release-Historie komplett: `docs/CHANGELOG.md`.
@@ -199,10 +203,5 @@ Release-Historie komplett: `docs/CHANGELOG.md`.
 ## Offene Punkte
 
 - Apple Developer Program + Notarisierung (wenn User-Basis >0 wird, 99 €/Jahr)
-- Hold-to-Talk als Alternative zu Toggle
-- Whisper-Modell-Option in Settings (aktuell fix `large-v3-turbo`)
-- Streaming-Transkription mit Interim-Text im HUD
-- Multi-Mic-Selector
-- Translate-Modus (Diktat A → Output B)
 - iOS-App testen + releasen
 - Apple Intelligence re-evaluieren, falls Apple größeres on-device Modell liefert
