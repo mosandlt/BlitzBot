@@ -52,6 +52,22 @@ for bundle in "$SWIFT_BUILD/release/"*.bundle; do
     cp -R "$bundle" "$APP_DIR/Contents/Resources/"
 done
 
+# macOS 26+ requires CFBundleIdentifier in resource bundles or Bundle(url:) returns nil,
+# causing Bundle.module assertionFailure at runtime. SPM only writes CFBundleDevelopmentRegion,
+# so we patch each copied bundle that is missing a bundle identifier.
+for bundle in "$APP_DIR/Contents/Resources/"*.bundle; do
+    [ -e "$bundle" ] || continue
+    plist="$bundle/Info.plist"
+    if [ -f "$plist" ] && ! /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" &>/dev/null; then
+        bundle_name="$(basename "$bundle" .bundle)"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string de.blitzbot.resource.$bundle_name" "$plist"
+        /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string BNDL" "$plist"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleName string $bundle_name" "$plist"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$plist"
+        /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$plist"
+    fi
+done
+
 echo "→ codesign (identity: $IDENTITY)"
 codesign --force --deep --sign "$IDENTITY" "$APP_DIR"
 
