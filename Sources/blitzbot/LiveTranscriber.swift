@@ -32,6 +32,10 @@ struct LivePartial: Equatable {
 /// protected by an explicit lock instead.
 final class LiveTranscriberManager: @unchecked Sendable {
     private let lock = NSLock()
+    // Stored as soon as the AppleLiveTranscriber is created so that feed() on the
+    // audio-render thread can route buffers immediately. AppleLiveTranscriber.feed()
+    // itself guards on inputContinuation != nil, so early calls (before the analyzer
+    // is ready) are safely dropped without touching the audio engine.
     private var inner: AnyObject?
     private var _isRunning = false
 
@@ -54,14 +58,24 @@ final class LiveTranscriberManager: @unchecked Sendable {
         guard !already else { return }
         if #available(macOS 26.0, *) {
             let transcriber = AppleLiveTranscriber()
+            // Set immediately so the audio-render tap can call feed() from the first
+            // buffer onwards. AppleLiveTranscriber.feed() gates on inputContinuation,
+            // so pre-setup calls are no-ops, not crashes.
+            // stop() sets isStopped=true on the transcriber so any concurrent start()
+            // await returns early and the analyzer is cleaned up.
+            lock.lock()
+            inner = transcriber
+            lock.unlock()
             do {
                 try await transcriber.start(locale: locale, onPartial: onPartial)
                 lock.lock()
-                inner = transcriber
                 _isRunning = true
                 lock.unlock()
             } catch {
                 Log.write("LiveTranscriber: start failed — \(error)")
+                lock.lock()
+                if inner === transcriber { inner = nil }
+                lock.unlock()
             }
         }
     }
@@ -81,11 +95,10 @@ final class LiveTranscriberManager: @unchecked Sendable {
     func stop() async {
         lock.lock()
         let t = inner
-        let wasRunning = _isRunning
         inner = nil
         _isRunning = false
         lock.unlock()
-        guard wasRunning else { return }
+        guard let t else { return }
         if #available(macOS 26.0, *), let app = t as? AppleLiveTranscriber {
             await app.stop()
         }
@@ -107,6 +120,8 @@ final class AppleLiveTranscriber: @unchecked Sendable {
     private var confirmedText: String = ""
     private var bufferCount: Int = 0
     private var onPartialCallback: (@MainActor (LivePartial) -> Void)?
+    // Set by stop() so that a concurrent start() can detect it was superseded.
+    private var isStopped = false
 
     private let lock = NSLock()
 
@@ -116,10 +131,6 @@ final class AppleLiveTranscriber: @unchecked Sendable {
 
     @MainActor
     func start(locale: String, onPartial: @escaping @MainActor (LivePartial) -> Void) async throws {
-        // Explicit option set instead of `.progressiveTranscription` preset:
-        // we need `volatileResults` to get live partial text, and
-        // `frequentFinalization` so the confirmed segment buffer grows quickly
-        // instead of waiting for utterance boundaries.
         let trans = SpeechTranscriber(
             locale: Locale(identifier: locale),
             transcriptionOptions: [],
@@ -127,22 +138,34 @@ final class AppleLiveTranscriber: @unchecked Sendable {
             attributeOptions: []
         )
 
-        // Lazy first-time asset download. nil = already installed system-wide.
+        // Await asset installation before starting the analyzer — firing it
+        // detached while the analyzer starts causes a race where the analyzer
+        // runs without the models being ready yet.
         if let req = try? await AssetInventory.assetInstallationRequest(supporting: [trans]) {
-            Task.detached {
-                do {
-                    try await req.downloadAndInstall()
-                    Log.write("LiveTranscriber: asset install completed for \(locale)")
-                } catch {
-                    Log.write("LiveTranscriber: asset install failed for \(locale): \(error)")
-                }
+            do {
+                try await req.downloadAndInstall()
+                Log.write("LiveTranscriber: asset install completed for \(locale)")
+            } catch {
+                Log.write("LiveTranscriber: asset install failed for \(locale): \(error)")
             }
         }
+
+        // If stop() was called while we were awaiting the asset install, bail.
+        lock.lock()
+        let alreadyStopped = isStopped
+        lock.unlock()
+        if alreadyStopped { return }
 
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [trans]) else {
             throw NSError(domain: "AppleLiveTranscriber", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "No compatible audio format"])
         }
+
+        // Check again — another await above.
+        lock.lock()
+        let stoppedAfterFormat = isStopped
+        lock.unlock()
+        if stoppedAfterFormat { return }
 
         let (stream, cont) = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(128))
 
@@ -195,6 +218,20 @@ final class AppleLiveTranscriber: @unchecked Sendable {
         }
 
         try await analyzer.start(inputSequence: stream)
+
+        // If stop() was called while analyzer was starting, clean up the analyzer
+        // we just started so it doesn't become a dangling resource.
+        lock.lock()
+        let stoppedDuringStart = isStopped
+        lock.unlock()
+        if stoppedDuringStart {
+            task.cancel()
+            cont.finish()
+            try? await analyzer.finalizeAndFinishThroughEndOfInput()
+            Log.write("LiveTranscriber: stopped during start(), cleaned up")
+            return
+        }
+
         self.analyzer = analyzer
         self.transcriber = trans
         self.resultsTask = task
@@ -238,6 +275,27 @@ final class AppleLiveTranscriber: @unchecked Sendable {
                 return
             }
             converted = copy
+        } else if buffer.format.channelCount > 1 && target.channelCount == 1 &&
+                  buffer.format.sampleRate == target.sampleRate {
+            // VPIO delivers multi-channel (e.g. 3ch: voice + AEC refs) at the
+            // same sample rate. Extract channel 0 directly — AVAudioConverter's
+            // downmix averages all channels, diluting the voice signal.
+            guard let copy = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: buffer.frameLength) else { return }
+            copy.frameLength = buffer.frameLength
+            let frames = Int(buffer.frameLength)
+            if let src = buffer.floatChannelData?[0], let dst = copy.int16ChannelData?[0] {
+                for i in 0..<frames {
+                    let sample = max(-1.0, min(1.0, src[i]))
+                    dst[i] = Int16(sample * 32767)
+                }
+            } else if let src = buffer.floatChannelData?[0], let dst = copy.floatChannelData?[0] {
+                memcpy(dst, src, frames * MemoryLayout<Float>.size)
+            } else if let src = buffer.int16ChannelData?[0], let dst = copy.int16ChannelData?[0] {
+                memcpy(dst, src, frames * MemoryLayout<Int16>.size)
+            } else {
+                return
+            }
+            converted = copy
         } else {
             guard let conv else { return }
             let ratio = target.sampleRate / buffer.format.sampleRate
@@ -262,6 +320,7 @@ final class AppleLiveTranscriber: @unchecked Sendable {
     @MainActor
     func stop() async {
         lock.lock()
+        isStopped = true
         let cont = inputContinuation
         let task = resultsTask
         let total = bufferCount
@@ -270,9 +329,12 @@ final class AppleLiveTranscriber: @unchecked Sendable {
         onPartialCallback = nil
         lock.unlock()
 
+        // Finish input first so the analyzer can flush remaining audio,
+        // then finalize before cancelling the drain task — otherwise we lose
+        // any final results produced during finalization.
         cont?.finish()
-        task?.cancel()
         try? await analyzer?.finalizeAndFinishThroughEndOfInput()
+        task?.cancel()
         analyzer = nil
         transcriber = nil
         converter = nil

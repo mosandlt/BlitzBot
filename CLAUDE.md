@@ -185,7 +185,7 @@ Hotkey → ModeProcessor.toggle → AudioRecorder → wav → WhisperTranscriber
 
 ## Aktueller Stand
 
-- **Aktuelle Version:** v1.5.0 (Stand: 2026-04-23)
+- **Aktuelle Version:** v1.5.1 (Stand: 2026-05-04)
 - **GitHub:** https://github.com/mosandlt/BlitzBot (MIT, public)
 - **Bundle-ID:** `de.blitzbot.app`. Keychain-Service: `de.blitzbot.mac` (Accounts pro Profile-Slot + Legacy `anthropic-api-key` / `openai-api-key` / `ollama-api-key`)
 - **Release-Artifakt:** ad-hoc signiert via `./build-app.sh --release` → `.zip` auf GitHub Releases. End-User: Rechtsklick → Öffnen beim ersten Start (nicht notarisiert).

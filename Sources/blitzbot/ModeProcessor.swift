@@ -124,8 +124,18 @@ final class ModeProcessor: ObservableObject {
     private var recoveryTimer: Timer?
     private var levelCancellable: AnyCancellable?
     private var voiceActivityCancellable: AnyCancellable?
-    private static let silenceThreshold: Float = 0.03
+    /// Hysteretic noise gate — the single fixed threshold previously misfired on
+    /// keyboard transients (typing crossed it momentarily but its sustained
+    /// energy was far lower). Open and close levels are ~6 dB apart and the
+    /// gate stays open for `gateHangover` after the last above-open frame.
+    private static let gateOpenThreshold: Float = 0.04
+    private static let gateCloseThreshold: Float = 0.02
+    private static let gateHangover: TimeInterval = 0.35
     private static let silenceBannerDelay: TimeInterval = 5
+    /// Latched gate state. Toggled by the level subscriber; consumed by both
+    /// `hasVoiceActivity` (HUD badge) and the auto-stop / silence banner logic.
+    private var gateOpen: Bool = false
+    private var lastVoiceActivityAt: Date?
     /// How long the user has to pick a new profile before the recovery state
     /// is discarded (transcript remains on the pasteboard as a safety net).
     static let recoveryTimeoutSeconds: TimeInterval = 30
@@ -197,7 +207,10 @@ final class ModeProcessor: ObservableObject {
             recoveryContext = nil
         }
         do {
-            let url = try recorder.start(preferredMicUID: config.preferredMicUID)
+            let resolvedMicUID = config.preferredMicUID ?? AudioInputDevices.defaultInputUID()
+            let vpio = config.voiceIsolation.resolved(forMicUID: resolvedMicUID)
+            let url = try recorder.start(preferredMicUID: config.preferredMicUID,
+                                         voiceIsolation: vpio)
             activeMode = mode
             detectedLanguage = nil
             autoExecute = false
@@ -229,7 +242,15 @@ final class ModeProcessor: ObservableObject {
         }
     }
 
+    /// Single level subscriber drives gate state, HUD badge and (when enabled)
+    /// the auto-stop / silence-banner pipeline. Hysteresis: open at
+    /// `gateOpenThreshold`, close at `gateCloseThreshold` only after
+    /// `gateHangover` of continuous below-open audio. Levels in the band
+    /// between close and open keep the current state — this is what stops
+    /// keyboard transients from flipping voice/silence on every frame.
     private func startVoiceActivityMonitor() {
+        gateOpen = false
+        lastVoiceActivityAt = nil
         voiceActivityCancellable = recorder.$level
             .receive(on: DispatchQueue.main)
             .sink { [weak self] level in
@@ -237,37 +258,66 @@ final class ModeProcessor: ObservableObject {
                     self?.hasVoiceActivity = false
                     return
                 }
-                self.hasVoiceActivity = level > Self.silenceThreshold
+                self.updateGate(level: level)
+                self.hasVoiceActivity = self.gateOpen
             }
+    }
+
+    private func updateGate(level: Float) {
+        let now = Date()
+        if level >= Self.gateOpenThreshold {
+            gateOpen = true
+            lastVoiceActivityAt = now
+        } else if level < Self.gateCloseThreshold {
+            // Below close threshold: drop the gate only after hangover so word
+            // tails ("…end-t") and inter-syllable dips don't trigger silence.
+            if let last = lastVoiceActivityAt {
+                if now.timeIntervalSince(last) >= Self.gateHangover {
+                    gateOpen = false
+                }
+            } else {
+                gateOpen = false
+            }
+        }
+        // Levels in [close, open): keep current state (hysteresis band).
     }
 
     private func startInactivityTimer(config: AppConfig) {
         guard config.autoStopEnabled else { return }
         inactivityTimer?.invalidate()
+        var wasOpen = false
         levelCancellable = recorder.$level
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] level in
+            .sink { [weak self] _ in
                 guard let self, self.isRecording else { return }
-                if level > Self.silenceThreshold {
-                    // Voice detected — reset everything
-                    self.isInSilence = false
-                    self.showSilenceBanner = false
-                    self.silenceBannerTimer?.invalidate()
-                    self.silenceBannerTimer = nil
-                    self.resetInactivityCountdown(config: config)
-                } else {
-                    // Silence — schedule banner after 5s delay if not already pending
-                    if !self.isInSilence {
-                        self.isInSilence = true
+                // Read gate state set by startVoiceActivityMonitor's subscriber.
+                // Both subscribers fire on the same publisher; Combine guarantees
+                // ordering per-publisher so the gate is up-to-date by the time we
+                // observe it here.
+                let isOpen = self.gateOpen
+                if isOpen {
+                    if !wasOpen {
+                        // Rising edge — voice resumed after silence.
+                        self.isInSilence = false
+                        self.showSilenceBanner = false
                         self.silenceBannerTimer?.invalidate()
-                        self.silenceBannerTimer = Timer.scheduledTimer(
-                            withTimeInterval: Self.silenceBannerDelay,
-                            repeats: false
-                        ) { [weak self] _ in
-                            DispatchQueue.main.async { self?.showSilenceBanner = true }
-                        }
+                        self.silenceBannerTimer = nil
+                    }
+                    // Refresh the inactivity deadline on every voice-active frame
+                    // so a continuous monologue keeps the timer at full duration.
+                    self.resetInactivityCountdown(config: config)
+                } else if wasOpen {
+                    // Falling edge — gate just closed.
+                    self.isInSilence = true
+                    self.silenceBannerTimer?.invalidate()
+                    self.silenceBannerTimer = Timer.scheduledTimer(
+                        withTimeInterval: Self.silenceBannerDelay,
+                        repeats: false
+                    ) { [weak self] _ in
+                        DispatchQueue.main.async { self?.showSilenceBanner = true }
                     }
                 }
+                wasOpen = isOpen
             }
         resetInactivityCountdown(config: config)
     }
@@ -300,6 +350,8 @@ final class ModeProcessor: ObservableObject {
         showSilenceBanner = false
         hasVoiceActivity = false
         autoStopSecondsLeft = nil
+        gateOpen = false
+        lastVoiceActivityAt = nil
     }
 
     private func stopAndProcess(config: AppConfig) async {

@@ -1,5 +1,33 @@
 import Foundation
 
+enum VoiceIsolationMode: String, CaseIterable, Identifiable, Codable {
+    /// ON for built-in mics, OFF for external mics. Resolved per recording.
+    case auto
+    case on
+    case off
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Auto (Built-in: an, extern: aus)"
+        case .on:   return "Immer an"
+        case .off:  return "Immer aus"
+        }
+    }
+
+    /// Resolves the mode against the active mic UID.
+    func resolved(forMicUID uid: String?) -> Bool {
+        switch self {
+        case .on:  return true
+        case .off: return false
+        case .auto:
+            guard let uid else { return true }   // unknown UID → assume built-in default
+            return AudioInputDevices.isBuiltIn(uid: uid)
+        }
+    }
+}
+
 enum OutputLanguage: String, CaseIterable, Identifiable, Codable {
     case auto, de, en
 
@@ -146,6 +174,14 @@ final class AppConfig: ObservableObject {
         didSet { defaults.set(sttCorrectionEnabled, forKey: "sttCorrectionEnabled") }
     }
 
+    /// macOS Voice Processing mode. `auto` resolves at recording start: ON for
+    /// built-in mics (kills typing/fan noise), OFF for external mics (VPIO mildly
+    /// colours voice; not worth it on a clean studio mic). `on`/`off` are explicit
+    /// user overrides. Persisted as raw string.
+    @Published var voiceIsolation: VoiceIsolationMode {
+        didSet { defaults.set(voiceIsolation.rawValue, forKey: "voiceIsolation") }
+    }
+
     /// Preferred microphone (Core Audio device UID). nil = follow system default.
     /// Resolved to a live AudioDeviceID at recording start; if the device is gone,
     /// AudioRecorder falls back to system default silently.
@@ -254,6 +290,12 @@ final class AppConfig: ObservableObject {
         self.liveTranscriptionEnabled = defaults.bool(forKey: "liveTranscriptionEnabled")
         self.sttCorrectionEnabled = defaults.bool(forKey: "sttCorrectionEnabled")
         self.preferredMicUID = defaults.string(forKey: "preferredMicUID")
+        if let raw = defaults.string(forKey: "voiceIsolation"),
+           let mode = VoiceIsolationMode(rawValue: raw) {
+            self.voiceIsolation = mode
+        } else {
+            self.voiceIsolation = .auto
+        }
         // Custom anonymization terms (persistent, separate from the session mapping).
         // Read once into a local to avoid "self used before all stored properties
         // initialized" — then push into the engine at the very end of init.

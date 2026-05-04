@@ -313,7 +313,16 @@ struct SettingsView: View {
             // ── 2. Aufnahme — Mikro + Auto-Stop ─────────────────────────────────
             Section("Aufnahme") {
                 micPicker
-                Divider().padding(.vertical, 4)
+                Picker("Voice Isolation", selection: $config.voiceIsolation) {
+                    ForEach(VoiceIsolationMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: config.voiceIsolation) { _ in config.save() }
+                Text("Apples macOS-Sprachverarbeitung (gleicher Stack wie FaceTime / Diktat) filtert Tastaturklicks, Lüfter und Hintergrundrauschen vor der Aufnahme. **Auto** schaltet das Filter beim eingebauten Mikrofon ein und bei externen USB-/Studio-Mics aus, wo VPIO die Stimme leicht verfärben kann. Ändert nichts an der Original-WAV — Whisper bekommt das saubere Signal.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Toggle("Auto-Stop bei Stille", isOn: $config.autoStopEnabled)
                     .onChange(of: config.autoStopEnabled) { _ in config.save() }
                 if config.autoStopEnabled {

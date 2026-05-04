@@ -53,6 +53,25 @@ enum AudioInputDevices {
         list().first { $0.uid == uid }?.id
     }
 
+    /// True when the device is reported by Core Audio as a built-in microphone
+    /// (`kAudioDeviceTransportTypeBuiltIn`). Drives the auto-on heuristic for
+    /// Voice Isolation: laptop mics need it (typing/fan noise), studio mics
+    /// usually don't (and VPIO mildly colours the voice).
+    static func isBuiltIn(uid: String) -> Bool {
+        guard let id = deviceID(forUID: uid) else { return false }
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &transport) == noErr else {
+            return false
+        }
+        return transport == kAudioDeviceTransportTypeBuiltIn
+    }
+
     // MARK: - Private helpers
 
     private static func hasInputStreams(_ id: AudioDeviceID) -> Bool {
