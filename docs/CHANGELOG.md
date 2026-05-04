@@ -4,6 +4,7 @@ Für die aktuelle Version siehe `CLAUDE.md` → *Aktueller Stand*. GitHub-Releas
 
 | Version | Datum | Kernänderung |
 |---|---|---|
+| v1.5.2 | 2026-05-04 | **VPIO-Audio-Ducking-Fix**: System-Lautstärke wird nach Aufnahme mit Voice Isolation wieder freigegeben — `setVoiceProcessingEnabled(false)` + `engine.reset()` in `AudioRecorder.stop()`. Vorher blieb das macOS-Output-Ducking aktiv (Lautsprecher leise) bis zum App-Quit, und Re-Toggle half nicht weil der Input-Node im Stuck-State hing. |
 | v1.5.1 | 2026-05-04 | **VPIO-Fixes**: Live-Transkription funktioniert jetzt mit Voice Isolation (Float32→Int16-Konvertierung für SpeechAnalyzer) + Waveform-Stutter bei VPIO behoben (Buffer-Size 4096→1024 für 64ms-Kadenz statt 256ms). |
 | v1.5.0 | 2026-04-23 | **STT-Korrektur** (optionaler LLM-Pass nach Whisper für Dialekte/Bairisch + Sprachmischungen) + **Bairisch-Fix** (Whisper-Spracherzwingung auf DE bei Auto+Korrektur) + **Live-Spracherkennung im HUD** (DE/EN-Badge aktualisiert sich in Echtzeit) + **HUD-Controls**: Sprach-Pill + Cloud-Toggle direkt in der HUD klickbar. |
 | v1.4.1 | 2026-04-22 | **Live-Transkription** im HUD während der Aufnahme (Apple SpeechTranscriber, macOS 26+ / 16-core ANE): Text erscheint Wort für Wort, scrollt automatisch, Toggle in Settings → Allgemein. HUD-Transcript-Box sofort sichtbar + Panel-Höhe 300→380pt (Modi-Pills nicht mehr abgeschnitten). |

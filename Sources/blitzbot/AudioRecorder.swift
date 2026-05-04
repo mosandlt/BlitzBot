@@ -201,6 +201,20 @@ final class AudioRecorder: ObservableObject {
         }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        // VPIO leaves system-wide output ducking armed until the audio unit is
+        // released. Without this teardown, the Mac stays at lowered volume after
+        // recording and re-toggling Voice Isolation can't recover because the
+        // node still reports isVoiceProcessingEnabled == true.
+        if voiceIsolationActive {
+            do {
+                try engine.inputNode.setVoiceProcessingEnabled(false)
+                Log.write("AudioRecorder: voice processing disabled on stop")
+            } catch {
+                Log.write("AudioRecorder: setVoiceProcessingEnabled(false) on stop failed — \(error)")
+            }
+            voiceIsolationActive = false
+        }
+        engine.reset()
         file = nil
         bufferTap = nil
         let url = currentURL

@@ -815,6 +815,15 @@ Got other ideas? Open an issue.
 
 ## Changelog
 
+### v1.5.2 (2026-05-04)
+
+- **Voice Isolation no longer leaves the system audio ducked.** When VPIO (`AVAudioInputNode.setVoiceProcessingEnabled(true)`) is active, macOS lowers system output volume to prevent feedback — the same mechanism FaceTime/Zoom use. Before this fix, `AudioRecorder.stop()` only removed the tap and stopped the engine; the voice-processing flag stayed armed on the input node, so the OS kept ducking output until app-quit. Re-toggling Voice Isolation didn't help because the early-return guard saw `isVoiceProcessingEnabled == true` and skipped reinitialisation. Now stop() explicitly disables voice processing, calls `engine.reset()` to release the audio unit, and clears the cached flag — system volume returns to normal the moment recording ends.
+
+### v1.5.1 (2026-05-04)
+
+- **Live transcription now works with Voice Isolation.** When VPIO is enabled, the input node delivers Float32 multi-channel buffers; Apple's `SpeechTranscriber` expects Int16 mono, so live text was silently empty. The buffer-tap path now extracts channel 0, converts Float32→Int16, and feeds SpeechTranscriber correctly.
+- **Waveform stutter fixed under VPIO.** Buffer size at 16 kHz dropped from 4096 frames (256 ms / ~4 callbacks per second) to 1024 frames (64 ms / ~15 callbacks per second), so the waveform animates smoothly instead of stepping in chunks.
+
 ### v1.5.0 (2026-04-23)
 
 - **STT Correction** — optional LLM pass after Whisper (Settings → General → Transkription → *STT-Korrektur*). Fixes mis-transcriptions, dialect mix-ups, and missing punctuation before the text reaches any mode processing. Toggle on/off directly from the HUD cloud icon.
