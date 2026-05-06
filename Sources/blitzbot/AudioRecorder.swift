@@ -3,7 +3,12 @@ import CoreAudio
 import Foundation
 
 final class AudioRecorder: ObservableObject {
-    private let engine = AVAudioEngine()
+    /// Replaced after every VPIO recording. setVoiceProcessingEnabled(false)
+    /// + engine.reset() does NOT release the underlying AUVoiceProcessing
+    /// audio unit — the system-wide output ducking stays armed until the
+    /// last strong reference drops. Recreating the engine deallocates the AU
+    /// and clears the duck (Apple Developer Forums 721535, open since macOS 11).
+    private var engine = AVAudioEngine()
     private var file: AVAudioFile?
     private(set) var currentURL: URL?
     /// Optional second consumer of every captured PCM buffer. ModeProcessor
@@ -137,36 +142,30 @@ final class AudioRecorder: ObservableObject {
             let frameCount = buffer.frameLength
             guard frameCount > 0 else { return }
 
-            // VPIO delivers 16kHz/3ch: channel 0 = processed voice, ch1+2 = AEC
+            // VPIO delivers multi-channel: ch0 = processed voice, the rest = AEC
             // reference signals. AVAudioConverter's standard downmix averages all
-            // channels, diluting voice to ~1/3 amplitude. When the sample rate
-            // already matches (16kHz→16kHz), extract channel 0 directly.
-            if useVPIO && buffer.format.channelCount > 1 &&
-               buffer.format.sampleRate == outProcessingFormat.sampleRate {
-                if self.ringWriteIdx == 0 {
-                    Log.write("AudioRecorder: VPIO ch0-extract fmt=\(buffer.format.sampleRate)Hz/\(buffer.format.channelCount)ch frames=\(frameCount)")
-                }
-                guard let srcData = buffer.floatChannelData else { return }
-                let ch0 = srcData[0]
-                guard let mono = AVAudioPCMBuffer(pcmFormat: outProcessingFormat,
-                                                  frameCapacity: frameCount) else { return }
-                mono.frameLength = frameCount
-                if let dst = mono.int16ChannelData?[0] {
-                    for i in 0..<Int(frameCount) {
-                        let sample = max(-1.0, min(1.0, ch0[i]))
-                        dst[i] = Int16(sample * 32767)
-                    }
-                }
-                try? file.write(from: mono)
-                self.publishLevel(from: buffer)
-                self.bufferTap?(buffer, when)
-                return
+            // channels, which dilutes voice (~1/N amplitude on N-channel devices)
+            // and mixes in reference noise — Whisper then hallucinates from the
+            // resulting mush. Pre-extract ch0 to a mono Float buffer; the converter
+            // path then handles only sample-rate conversion + Float→Int16.
+            let workBuffer: AVAudioPCMBuffer
+            if useVPIO && buffer.format.channelCount > 1 {
+                guard let mono = AudioRecorder.extractChannel0AsMonoFloat(from: buffer) else { return }
+                workBuffer = mono
+            } else {
+                workBuffer = buffer
             }
 
-            // Non-VPIO path: sample-rate conversion via AVAudioConverter.
-            if converter == nil {
-                let actualFormat = buffer.format
-                Log.write("AudioRecorder: first buffer fmt=\(actualFormat.sampleRate)Hz/\(actualFormat.channelCount)ch frames=\(frameCount)")
+            // Lazily (re)create the converter once the real input format is known.
+            // Under VPIO we deferred this; if the source format ever changes mid-
+            // recording (Bluetooth profile switch, mic swap), the input format on
+            // the existing converter no longer matches and we rebuild it.
+            if converter == nil || converter?.inputFormat != workBuffer.format {
+                let actualFormat = workBuffer.format
+                let extractNote = (useVPIO && buffer.format.channelCount > 1)
+                    ? " (VPIO ch0-extract from \(buffer.format.channelCount)ch)"
+                    : ""
+                Log.write("AudioRecorder: first buffer fmt=\(actualFormat.sampleRate)Hz/\(actualFormat.channelCount)ch frames=\(frameCount)\(extractNote)")
                 converter = AVAudioConverter(from: actualFormat, to: outProcessingFormat)
                 if converter == nil {
                     Log.write("AudioRecorder: converter creation failed — dropping buffers")
@@ -177,21 +176,58 @@ final class AudioRecorder: ObservableObject {
             }
 
             guard let conv = converter else { return }
-            let ratio = outProcessingFormat.sampleRate / buffer.format.sampleRate
+            let ratio = outProcessingFormat.sampleRate / workBuffer.format.sampleRate
             let capacity = AVAudioFrameCount(max(1, Double(frameCount) * ratio))
             guard let out = AVAudioPCMBuffer(pcmFormat: outProcessingFormat,
                                              frameCapacity: capacity) else { return }
             var error: NSError?
             conv.convert(to: out, error: &error) { _, status in
                 status.pointee = .haveData
-                return buffer
+                return workBuffer
             }
             if error == nil {
                 try? file.write(from: out)
             }
-            self.publishLevel(from: buffer)
-            self.bufferTap?(buffer, when)
+            self.publishLevel(from: workBuffer)
+            self.bufferTap?(workBuffer, when)
         }
+    }
+
+    /// Reduces a multi-channel PCM buffer to a mono Float32 buffer using only
+    /// channel 0 (the VPIO-processed voice channel). Sample rate is preserved —
+    /// the caller's AVAudioConverter handles SRC + Float→Int16 in a second pass.
+    /// Required because AVAudioConverter's built-in downmix averages all input
+    /// channels, mixing AEC reference signals into the voice output.
+    private static func extractChannel0AsMonoFloat(from buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let srcFormat = buffer.format
+        guard let monoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                             sampleRate: srcFormat.sampleRate,
+                                             channels: 1,
+                                             interleaved: false) else { return nil }
+        let frames = Int(buffer.frameLength)
+        guard frames > 0,
+              let out = AVAudioPCMBuffer(pcmFormat: monoFormat,
+                                         frameCapacity: AVAudioFrameCount(frames)) else { return nil }
+        out.frameLength = AVAudioFrameCount(frames)
+        guard let dst = out.floatChannelData?[0] else { return nil }
+        let stride = srcFormat.isInterleaved ? Int(srcFormat.channelCount) : 1
+        if let chData = buffer.floatChannelData {
+            let src = chData[0]
+            if stride == 1 {
+                memcpy(dst, src, frames * MemoryLayout<Float>.size)
+            } else {
+                for i in 0..<frames { dst[i] = src[i * stride] }
+            }
+        } else if let chData = buffer.int16ChannelData {
+            let src = chData[0]
+            let scale: Float = 1.0 / 32768.0
+            for i in 0..<frames {
+                dst[i] = Float(src[i * stride]) * scale
+            }
+        } else {
+            return nil
+        }
+        return out
     }
 
     func stop() -> URL? {
@@ -200,12 +236,14 @@ final class AudioRecorder: ObservableObject {
             engineConfigObserver = nil
         }
         engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        // VPIO leaves system-wide output ducking armed until the audio unit is
-        // released. Without this teardown, the Mac stays at lowered volume after
-        // recording and re-toggling Voice Isolation can't recover because the
-        // node still reports isVoiceProcessingEnabled == true.
-        if voiceIsolationActive {
+        // VPIO duck teardown — strict order: VP off BEFORE stop so the AU emits
+        // its "restore other audio" event, then drop the engine reference so the
+        // AUVoiceProcessing unit is actually deallocated. setVoiceProcessingEnabled
+        // + reset alone keeps the AU alive (the engine still holds it), and the
+        // system-wide output ducking remains armed until app quit. Recreating the
+        // engine here clears the duck reliably.
+        let wasVPIO = voiceIsolationActive
+        if wasVPIO {
             do {
                 try engine.inputNode.setVoiceProcessingEnabled(false)
                 Log.write("AudioRecorder: voice processing disabled on stop")
@@ -214,7 +252,12 @@ final class AudioRecorder: ObservableObject {
             }
             voiceIsolationActive = false
         }
+        engine.stop()
         engine.reset()
+        if wasVPIO {
+            engine = AVAudioEngine()
+            Log.write("AudioRecorder: engine recreated to release VPIO audio unit")
+        }
         file = nil
         bufferTap = nil
         let url = currentURL
